@@ -1,0 +1,449 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { useTotalUnread } from "@/hooks/use-total-unread";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Book,
+  Bot,
+  BrainCircuit,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  Crown,
+  GitBranch,
+  Kanban,
+  LayoutDashboard,
+  LogOut,
+  Megaphone,
+  MessageSquare,
+  Radio,
+  Settings,
+  Shield,
+  User,
+  UserCog,
+  Users,
+  UsersRound,
+  Workflow,
+  X,
+  Zap,
+} from "lucide-react";
+import type { AccountRole } from "@/lib/auth/roles";
+
+// Per-role chip metadata used in the sidebar's account strip + the
+// Members tab roster. Keeping this near both consumers in a single
+// place avoids drift between the two surfaces — when a designer
+// wants to recolour "agent" rows, this is the one diff.
+const ROLE_CHIP: Record<
+  AccountRole,
+  { icon: typeof Crown; label: string; className: string }
+> = {
+  owner: {
+    icon: Crown,
+    label: "Owner",
+    // Amber: scarce, immutable, "the boss" — gets visual emphasis.
+    className:
+      "border-amber-500/40 bg-amber-500/10 text-amber-300",
+  },
+  admin: {
+    icon: Shield,
+    label: "Team Leader",
+    // Primary-tinted: significant but not as scarce as owner.
+    className:
+      "border-primary/40 bg-primary/10 text-primary",
+  },
+  agent: {
+    icon: UserCog,
+    label: "Team Member",
+    // Neutral slate: the operational default.
+    className:
+      "border-border bg-muted text-foreground",
+  },
+  viewer: {
+    icon: User,
+    label: "Viewer",
+    // Muted slate: read-only role; visually quieter than agent.
+    className:
+      "border-border bg-card text-muted-foreground",
+  },
+};
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  /**
+   * When true, the nav row renders a small "Beta" chip after the label.
+   * Purely informational — doesn't affect routing or access.
+   */
+  beta?: boolean;
+}
+
+const navItems: NavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/inbox", label: "Inbox", icon: MessageSquare },
+  { href: "/contacts", label: "Contacts", icon: Users },
+  { href: "/pipelines", label: "Pipelines", icon: GitBranch },
+  { href: "/broadcasts", label: "Broadcasts", icon: Megaphone },
+  { href: "/action-items", label: "My Action Items", icon: CheckSquare },
+  { href: "/automations", label: "Automations", icon: Zap },
+  { href: "/flows", label: "Flows", icon: Bot },
+  { href: "/team-action-items", label: "Team Action Items", icon: CheckSquare },
+  { href: "/knowledge-bases", label: "Knowledge", icon: BrainCircuit },
+];
+
+const bottomNavItems = [
+  { href: "/settings", label: "Settings", icon: Settings },
+];
+
+interface SidebarProps {
+  /** Controlled on mobile by the Header's hamburger button. Ignored on lg+. */
+  open?: boolean;
+  onClose?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+}
+
+export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCollapse }: SidebarProps) {
+  const pathname = usePathname();
+  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const totalUnread = useTotalUnread();
+  // Only surface the account-name strip when it actually carries
+  // information. A solo user's personal account is named after them
+  // (the 017 signup trigger seeds it from `full_name`), so showing it
+  // here would just duplicate the user name in the footer below. Once
+  // the account is renamed or the user joins a shared account, the
+  // name diverges and the strip becomes meaningful — that's the signal
+  // we gate on. Wait for the profile fetch to settle first, otherwise
+  // the strip flashes in once the row resolves (a layout jump).
+  const showAccountStrip =
+    !profileLoading &&
+    !!account?.name &&
+    account.name !== profile?.full_name;
+
+  // Close the drawer when route changes — users opened it to navigate,
+  // so once they pick a destination the drawer should get out of the way.
+  useEffect(() => {
+    onClose?.();
+    // Only pathname drives this — onClose identity doesn't need to re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  // Lock body scroll and allow Escape to close while the drawer is open on
+  // mobile. No-ops on desktop because the sidebar isn't positioned there.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onClose]);
+
+  return (
+    <>
+      {/* Backdrop — only exists on mobile and only when open. Clicking
+          it closes the drawer. Hidden from lg+ since the sidebar is
+          part of the main flex row there. */}
+      <button
+        type="button"
+        aria-label="Close menu"
+        onClick={onClose}
+        className={cn(
+          "fixed inset-0 z-30 bg-background/70 backdrop-blur-sm transition-opacity lg:hidden",
+          open
+            ? "pointer-events-auto opacity-100"
+            : "pointer-events-none opacity-0",
+        )}
+      />
+
+      <aside
+        className={cn(
+          // Mobile: fixed drawer that slides in from the left.
+          "fixed inset-y-0 left-0 z-40 flex h-full flex-col border-r border-border bg-card",
+          "transition-transform duration-200 ease-out will-change-transform",
+          open ? "translate-x-0" : "-translate-x-full",
+          // Desktop: static, always visible — reset all the mobile framing.
+          "lg:static lg:z-0 lg:translate-x-0 lg:transition-all lg:duration-300",
+          // Width based on collapsed state on desktop, full width on mobile
+          "w-64",
+          isCollapsed && "lg:w-[72px]"
+        )}
+        aria-label="Primary"
+      >
+        <div className={cn("flex h-14 shrink-0 items-center gap-2 border-b border-border px-4", isCollapsed ? "justify-center px-0 lg:px-0" : "justify-between")}>
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <MessageSquare className="h-4 w-4" />
+            </div>
+            <span className={cn("text-sm font-semibold text-foreground transition-opacity", isCollapsed && "lg:hidden")}>
+              Deccan Filings
+            </span>
+          </Link>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close menu"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Main navigation */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">
+          <TooltipProvider delay={0}>
+            <ul className="flex flex-col gap-1">
+              {navItems.map((item) => {
+                if (item.href === "/team-action-items" && accountRole !== 'admin' && accountRole !== 'owner') {
+                  return null;
+                }
+
+                const isActive =
+                  pathname === item.href ||
+                  (item.href !== "/dashboard" && pathname.startsWith(item.href));
+
+                const showUnreadDot =
+                  item.href === "/inbox" && totalUnread > 0 && !isActive;
+
+                const linkContent = (
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      // Taller on mobile so fingers can hit the row reliably (≥44px).
+                      "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2 overflow-hidden",
+                      isCollapsed ? "justify-center lg:px-0" : "gap-3",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <div className="relative flex shrink-0 items-center justify-center">
+                      <item.icon className="h-4 w-4" />
+                      {showUnreadDot && (
+                        <span
+                          aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
+                          className="absolute -right-1.5 -top-1.5 flex h-2 w-2"
+                        >
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                        </span>
+                      )}
+                    </div>
+                    <span className={cn("flex-1 truncate", isCollapsed && "lg:hidden")}>{item.label}</span>
+                    {item.beta && !isCollapsed && (
+                      <span
+                        aria-label="Beta feature"
+                        className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300"
+                      >
+                        Beta
+                      </span>
+                    )}
+                  </Link>
+                );
+
+                return (
+                  <li key={item.href}>
+                    {isCollapsed ? (
+                      <Tooltip>
+                        <TooltipTrigger className="w-full">
+                          {linkContent}
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="flex items-center gap-2">
+                          {item.label}
+                          {item.beta && (
+                            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300">
+                              Beta
+                            </span>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      linkContent
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </TooltipProvider>
+
+          <div className="my-4 border-t border-border" />
+
+          <TooltipProvider delay={0}>
+            <ul className="flex flex-col gap-1">
+              {bottomNavItems.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                const linkContent = (
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      isCollapsed ? "justify-center lg:px-0" : "gap-3",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    <span className={cn("truncate", isCollapsed && "lg:hidden")}>{item.label}</span>
+                  </Link>
+                );
+
+                return (
+                  <li key={item.href}>
+                    {isCollapsed ? (
+                      <Tooltip>
+                        <TooltipTrigger className="w-full">
+                          {linkContent}
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {item.label}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      linkContent
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </TooltipProvider>
+        </nav>
+
+        {/* User section */}
+        <div className="shrink-0 border-t border-border p-3">
+          {/* Account name display — surfaced only when the account
+              name differs from the user's own name (see
+              `showAccountStrip`). For a default solo account the two
+              match, so we hide it to avoid duplicating the user name
+              below; for renamed or shared accounts it tells the user
+              which account they're acting in. */}
+          {/* Collapse Toggle */}
+          <div className="mb-2 hidden lg:flex">
+            <button
+              onClick={onToggleCollapse}
+              className={cn(
+                "flex h-8 w-full items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+                isCollapsed ? "justify-center" : "px-3 gap-3"
+              )}
+              aria-label="Toggle sidebar"
+            >
+              <div className="flex items-center justify-center">
+                {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              </div>
+              <span className={cn("text-xs font-medium", isCollapsed && "hidden")}>Collapse</span>
+            </button>
+          </div>
+
+          {showAccountStrip && account?.name && !isCollapsed ? (
+            <div className="mb-2 flex items-center gap-2 px-3 text-xs text-muted-foreground">
+              <UsersRound className="size-3.5 shrink-0" />
+              <span className="truncate" title={account.name}>
+                {account.name}
+              </span>
+              {accountRole ? (
+                (() => {
+                  const meta = ROLE_CHIP[accountRole];
+                  const Icon = meta.icon;
+                  return (
+                    <span
+                      className={`ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${meta.className}`}
+                    >
+                      <Icon className="size-3" />
+                      {meta.label}
+                    </span>
+                  );
+                })()
+              ) : null}
+            </div>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger className={cn("flex w-full items-center rounded-lg py-2 text-left transition-colors hover:bg-muted/60 focus:bg-muted/60 focus:outline-none data-popup-open:bg-muted/60", isCollapsed ? "justify-center px-0" : "px-3 gap-3")}>
+              <Avatar className="size-8 shrink-0">
+                {profile?.avatar_url ? (
+                  <AvatarImage
+                    src={profile.avatar_url}
+                    alt={profile.full_name ?? "Avatar"}
+                  />
+                ) : null}
+                <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
+                  {profile?.full_name?.charAt(0)?.toUpperCase() ??
+                    profile?.email?.charAt(0)?.toUpperCase() ??
+                    "U"}
+                </AvatarFallback>
+              </Avatar>
+              <div className={cn("min-w-0 flex-1", isCollapsed && "lg:hidden")}>
+                <p className="truncate text-sm font-medium text-foreground">
+                  {profile?.full_name ?? "User"}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {profile?.email ?? ""}
+                </p>
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              side="top"
+              sideOffset={6}
+              className="min-w-56 bg-popover text-popover-foreground ring-border"
+            >
+              <DropdownMenuItem
+                render={
+                  <Link
+                    href="/settings?tab=profile"
+                    onClick={onClose}
+                    className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+                  />
+                }
+              >
+                <User className="size-4" />
+                Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                render={
+                  <Link
+                    href="/settings?tab=whatsapp"
+                    onClick={onClose}
+                    className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+                  />
+                }
+              >
+                <Settings className="size-4" />
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-border" />
+              <DropdownMenuItem
+                onClick={signOut}
+                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+              >
+                <LogOut className="size-4" />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </aside>
+    </>
+  );
+}
