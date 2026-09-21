@@ -77,3 +77,76 @@ describe("sendMediaMessage — payload shape", () => {
     ).rejects.toThrow(/requires a link/);
   });
 });
+
+describe("getMediaUrl", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("appends phone_number_id query parameter when provided", async () => {
+    let capturedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        capturedUrl = url;
+        return {
+          ok: true,
+          json: async () => ({
+            url: "https://lookaside.fbsbx.com/whatsapp_business/attachments/123",
+            mime_type: "image/jpeg",
+          }),
+        } as Response;
+      }),
+    );
+
+    const { getMediaUrl } = await import("./meta-api");
+    const result = await getMediaUrl({
+      mediaId: "media-123",
+      accessToken: "token-abc",
+      phoneNumberId: "phone-456",
+    });
+
+    expect(capturedUrl).toContain("media-123?phone_number_id=phone-456");
+    expect(result.url).toBe("https://lookaside.fbsbx.com/whatsapp_business/attachments/123");
+    expect(result.mimeType).toBe("image/jpeg");
+  });
+
+  it("throws MetaApiError with code and details on failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({
+            error: {
+              message: "Unsupported get request. Object with ID '1077034291635748' does not exist",
+              type: "GraphMethodException",
+              code: 100,
+              error_subcode: 33,
+              fbtrace_id: "Az123xyz",
+            },
+          }),
+        } as unknown as Response;
+      }),
+    );
+
+    const { getMediaUrl, MetaApiError } = await import("./meta-api");
+    let caught: unknown = null;
+    try {
+      await getMediaUrl({
+        mediaId: "1077034291635748",
+        accessToken: "token-abc",
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(MetaApiError);
+    const metaErr = caught as InstanceType<typeof MetaApiError>;
+    expect(metaErr.code).toBe(100);
+    expect(metaErr.subcode).toBe(33);
+    expect(metaErr.fbtraceId).toBe("Az123xyz");
+  });
+});
+

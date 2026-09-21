@@ -23,19 +23,55 @@ export interface MetaPhoneInfo {
   quality_rating?: string
 }
 
+export interface MetaErrorPayload {
+  message?: string
+  code?: number
+  error_subcode?: number
+  type?: string
+  error_data?: { details?: string }
+  fbtrace_id?: string
+}
+
 interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string }
+  error?: MetaErrorPayload
+}
+
+export class MetaApiError extends Error {
+  code?: number
+  subcode?: number
+  fbtraceId?: string
+  details?: string
+  status: number
+
+  constructor(message: string, status: number, meta?: MetaErrorPayload) {
+    super(message)
+    this.name = 'MetaApiError'
+    this.status = status
+    this.code = meta?.code
+    this.subcode = meta?.error_subcode
+    this.fbtraceId = meta?.fbtrace_id
+    this.details = meta?.error_data?.details
+  }
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
   let message = fallback
+  let metaPayload: MetaErrorPayload | undefined
   try {
     const data = (await response.json()) as MetaErrorResponse
-    if (data.error?.message) message = data.error.message
+    if (data.error) {
+      metaPayload = data.error
+      const parts: string[] = []
+      if (metaPayload.code) parts.push(`Code ${metaPayload.code}`)
+      if (metaPayload.message) parts.push(metaPayload.message)
+      if (metaPayload.error_data?.details) parts.push(`(${metaPayload.error_data.details})`)
+      if (metaPayload.fbtrace_id) parts.push(`[fbtrace_id: ${metaPayload.fbtrace_id}]`)
+      message = parts.join(': ') || fallback
+    }
   } catch {
-    // response body wasn't JSON — keep the fallback
+    // response body wasn't JSON — keep fallback
   }
-  throw new Error(message)
+  throw new MetaApiError(message, response.status, metaPayload)
 }
 
 // ============================================================
@@ -989,6 +1025,7 @@ function validateInteractiveHeaderFooter(
 export interface GetMediaUrlArgs {
   mediaId: string
   accessToken: string
+  phoneNumberId?: string
 }
 
 /**
@@ -998,8 +1035,11 @@ export interface GetMediaUrlArgs {
 export async function getMediaUrl(
   args: GetMediaUrlArgs
 ): Promise<{ url: string; mimeType: string }> {
-  const { mediaId, accessToken } = args
-  const response = await fetch(`${META_API_BASE}/${mediaId}`, {
+  const { mediaId, accessToken, phoneNumberId } = args
+  const url = phoneNumberId
+    ? `${META_API_BASE}/${mediaId}?phone_number_id=${encodeURIComponent(phoneNumberId)}`
+    : `${META_API_BASE}/${mediaId}`
+  const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) {

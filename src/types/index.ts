@@ -204,7 +204,19 @@ export interface Message {
    * cue (renders with a "↩ button reply" affordance).
    */
   interactive_reply_id?: string;
+  /** Structured failure details from Meta Cloud API or sending logic. */
+  error_details?: MessageErrorDetails | string | null;
 }
+
+export interface MessageErrorDetails {
+  code?: number | string;
+  title?: string;
+  message?: string;
+  details?: string;
+  fbtrace_id?: string;
+  [key: string]: unknown;
+}
+
 
 export type ReactionActor = 'customer' | 'agent';
 

@@ -4,6 +4,7 @@ import {
   sendTextMessage,
   sendTemplateMessage,
   sendMediaMessage,
+  MetaApiError,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
 import { sendInstagramMessage, sendFacebookMessage } from '@/lib/meta/channels-api'
@@ -382,8 +383,63 @@ export async function POST(request: Request) {
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown Meta API error'
           console.error('Meta API send failed for all variants:', message)
+
+          const errorDetails: Record<string, unknown> = {
+            message,
+          }
+          if (err instanceof MetaApiError) {
+            if (err.code !== undefined) errorDetails.code = err.code
+            if (err.subcode !== undefined) errorDetails.subcode = err.subcode
+            if (err.details) errorDetails.details = err.details
+            if (err.fbtraceId) errorDetails.fbtrace_id = err.fbtraceId
+          }
+
+          let savedFailedMsg: { id: string } | null = null
+          const insertPayload: Record<string, unknown> = {
+            conversation_id,
+            sender_type: 'agent',
+            sender_id: user.id,
+            content_type: message_type,
+            content_text:
+              content_text ||
+              (message_type === 'template' ? `[Template: ${template_name}]` : null),
+            media_url: media_url || null,
+            template_name: template_name || null,
+            message_id: null,
+            status: 'failed',
+            reply_to_message_id: reply_to_message_id || null,
+            is_internal: !!is_internal,
+            error_details: errorDetails,
+          }
+
+          const { data: failedRec, error: insertErr } = await supabase
+            .from('messages')
+            .insert(insertPayload)
+            .select('id')
+            .single()
+
+          if (insertErr) {
+            if (insertErr.code === '42703' || insertErr.message?.includes('error_details')) {
+              delete insertPayload.error_details
+              const { data: retryRec } = await supabase
+                .from('messages')
+                .insert(insertPayload)
+                .select('id')
+                .single()
+              savedFailedMsg = retryRec
+            } else {
+              console.error('Failed to persist failed message row:', insertErr)
+            }
+          } else {
+            savedFailedMsg = failedRec
+          }
+
           return NextResponse.json(
-            { error: `Meta API error: ${message}` },
+            {
+              error: `Meta API error: ${message}`,
+              error_details: errorDetails,
+              message_id: savedFailedMsg?.id,
+            },
             { status: 502 }
           )
         }

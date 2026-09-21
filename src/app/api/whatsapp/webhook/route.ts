@@ -73,6 +73,15 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        errors?: Array<{
+          code: number
+          title?: string
+          message?: string
+          error_data?: {
+            details?: string
+          }
+          href?: string
+        }>
       }>
     }
     field: string
@@ -326,16 +335,52 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code: number
+    title?: string
+    message?: string
+    error_data?: {
+      details?: string
+    }
+    href?: string
+  }>
 }) {
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status.
+  // 1) Mirror onto messages — Meta's status values match CHECK constraint.
+  // When status is 'failed', capture structured error diagnostics if available.
+  const updatePayload: Record<string, unknown> = { status: status.status }
+
+  if (status.status === 'failed' && status.errors && status.errors.length > 0) {
+    const err = status.errors[0]
+    updatePayload.error_details = {
+      code: err.code,
+      title: err.title,
+      message: err.message,
+      details: err.error_data?.details,
+      href: err.href,
+    }
+    console.warn(
+      `[webhook] WhatsApp delivery failure for message ${status.id}: code ${err.code} - ${err.title || err.message || err.error_data?.details || 'Unknown error'}`
+    )
+  }
+
   const { error: msgErr } = await supabaseAdmin()
     .from('messages')
-    .update({ status: status.status })
+    .update(updatePayload)
     .eq('message_id', status.id)
 
   if (msgErr) {
-    console.error('Error updating message status:', msgErr)
+    // If error_details column not yet created in Postgres, fall back to status only
+    if (updatePayload.error_details && (msgErr.code === '42703' || msgErr.message?.includes('error_details'))) {
+      const { error: retryErr } = await supabaseAdmin()
+        .from('messages')
+        .update({ status: status.status })
+        .eq('message_id', status.id)
+      if (retryErr) {
+        console.error('Error updating message status on fallback:', retryErr)
+      }
+    } else {
+      console.error('Error updating message status:', msgErr)
+    }
   }
 
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id

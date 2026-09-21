@@ -34,7 +34,53 @@ interface MessageBubbleProps {
   onToggleReaction?: (emoji: string) => void;
 }
 
-function StatusIcon({ status }: { status: Message["status"] }) {
+function formatErrorMessage(errorDetails?: Message["error_details"]): string {
+  if (!errorDetails) return "Message failed to send";
+  if (typeof errorDetails === "string") return errorDetails;
+
+  const code = errorDetails.code;
+  const numCode =
+    typeof code === "number"
+      ? code
+      : typeof code === "string"
+        ? parseInt(code, 10)
+        : undefined;
+
+  if (numCode === 131047) {
+    return "24-hour service window closed. A pre-approved WhatsApp template is required to message this customer.";
+  }
+  if (numCode === 131026) {
+    return "Message undeliverable. The customer phone number cannot receive WhatsApp messages.";
+  }
+  if (numCode === 132000) {
+    return "Template parameter mismatch. The template variables do not match Meta's approved schema.";
+  }
+  if (numCode === 130429 || numCode === 80007) {
+    return "WhatsApp Cloud API rate limit exceeded. Please wait a moment and try again.";
+  }
+  if (numCode === 100 || numCode === 33) {
+    return (
+      errorDetails.details ||
+      errorDetails.message ||
+      "Invalid parameter or resource does not exist on WhatsApp."
+    );
+  }
+
+  return (
+    errorDetails.details ||
+    errorDetails.message ||
+    errorDetails.title ||
+    `Delivery failed (code: ${code || "unknown"})`
+  );
+}
+
+function StatusIcon({
+  status,
+  errorDetails,
+}: {
+  status: Message["status"];
+  errorDetails?: Message["error_details"];
+}) {
   switch (status) {
     case "sending":
       return <Clock className="h-3 w-3 text-muted-foreground" />;
@@ -44,8 +90,14 @@ function StatusIcon({ status }: { status: Message["status"] }) {
       return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
     case "read":
       return <CheckCheck className="h-3 w-3 text-blue-400" />;
-    case "failed":
-      return <XCircle className="h-3 w-3 text-red-400" />;
+    case "failed": {
+      const errorMsg = formatErrorMessage(errorDetails);
+      return (
+        <span title={errorMsg} className="cursor-help inline-flex items-center">
+          <XCircle className="h-3.5 w-3.5 text-red-500 hover:text-red-400" />
+        </span>
+      );
+    }
     default:
       return null;
   }
@@ -633,10 +685,21 @@ export function MessageBubble({
           </span>
           {isAgent && !message.is_internal && (
             <span className="ml-1">
-              <StatusIcon status={message.status} />
+              <StatusIcon
+                status={message.status}
+                errorDetails={message.error_details}
+              />
             </span>
           )}
         </div>
+        {message.status === "failed" && (
+          <div className="mt-1.5 flex items-start gap-1 rounded bg-destructive/15 border border-destructive/25 px-2 py-1 text-[11px] text-destructive dark:text-red-300">
+            <span className="font-semibold shrink-0">Failed:</span>
+            <span className="break-words">
+              {formatErrorMessage(message.error_details)}
+            </span>
+          </div>
+        )}
       </div>
       {reactions && reactions.length > 0 && onToggleReaction && (
         <MessageReactions

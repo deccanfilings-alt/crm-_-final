@@ -7,8 +7,10 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ mediaId: string }> }
 ) {
+  let mediaId = ''
   try {
-    const { mediaId } = await params
+    const resolvedParams = await params
+    mediaId = resolvedParams.mediaId
 
     if (!mediaId) {
       return NextResponse.json(
@@ -64,8 +66,12 @@ export async function GET(
 
     const accessToken = decrypt(config.access_token)
 
-    // Get the download URL from Meta
-    const mediaInfo = await getMediaUrl({ mediaId, accessToken })
+    // Get the download URL from Meta (passing phoneNumberId for Meta Graph API v21.0 compatibility)
+    const mediaInfo = await getMediaUrl({
+      mediaId,
+      accessToken,
+      phoneNumberId: config.phone_number_id,
+    })
 
     // Download the binary data
     const { buffer, contentType } = await downloadMedia({
@@ -80,7 +86,26 @@ export async function GET(
         'Cache-Control': 'public, max-age=86400',
       },
     })
-  } catch (error) {
+  } catch (error: any) {
+    // Detect expired media or objects not found on Meta CDN (WhatsApp media expires after 30 days)
+    const isNotFoundOrExpired =
+      error?.code === 100 ||
+      error?.subcode === 33 ||
+      error?.status === 404 ||
+      (typeof error?.message === 'string' &&
+        (error.message.includes('does not exist') ||
+          error.message.includes('Unsupported get request')));
+
+    if (isNotFoundOrExpired) {
+      console.warn(
+        `[whatsapp/media] Media object ${mediaId} expired or not found on Meta servers (WhatsApp media expires after 30 days).`
+      )
+      return NextResponse.json(
+        { error: 'Media expired or unavailable on WhatsApp servers' },
+        { status: 410 }
+      )
+    }
+
     console.error('Error in WhatsApp media GET:', error)
     return NextResponse.json(
       { error: 'Failed to fetch media' },
