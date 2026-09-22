@@ -3,9 +3,9 @@
 import React from "react"
 import { format } from "date-fns"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Crown, Shield, UserCog, User, UserCheck, Smile } from "lucide-react"
+import { Crown, Shield, UserCog, UserCheck, FileText, Download, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { TeamMessage, TaggedContactInfo } from "@/types"
+import type { TeamMessage, TaggedContactInfo, TeamChatAttachment } from "@/types"
 
 interface TeamMessageBubbleProps {
   message: TeamMessage
@@ -20,7 +20,6 @@ export function TeamMessageBubble({
   onToggleReaction,
   onSelectContact,
 }: TeamMessageBubbleProps) {
-  const isMe = message.sender_id === currentUserId
   const isMentioned = currentUserId && message.mentioned_user_ids?.includes(currentUserId)
   const time = format(new Date(message.created_at), "HH:mm")
 
@@ -33,9 +32,12 @@ export function TeamMessageBubble({
     .slice(0, 2)
     .toUpperCase()
 
-  // Render message content with parsed @teammate mentions and @{contact:id:name} tokens
+  // Render message content with parsed @teammate mentions, @{contact:id:name} tokens, and inline GIF URLs
   const renderFormattedContent = () => {
     const text = message.content || ""
+    if (text === "[Attachment]" && message.attachments && message.attachments.length > 0) {
+      return null
+    }
 
     // Split text by contact tokens `@{contact:<id>:<name>}` and `@mentions`
     const regex = /(@\{contact:[a-f0-9-]+:[^}]+\}|@[a-zA-Z0-9_\s]+?\b)/g
@@ -83,8 +85,109 @@ export function TeamMessageBubble({
         )
       }
 
+      // Detect raw GIF/image URLs pasted in message text
+      if (
+        part.startsWith("http") &&
+        (part.includes(".gif") || part.includes("giphy.com") || part.includes("tenor.com"))
+      ) {
+        return (
+          <div key={index} className="my-1.5">
+            <img
+              src={part.trim()}
+              alt="GIF"
+              className="max-h-64 max-w-sm rounded-xl object-contain border border-border shadow-xs"
+              loading="lazy"
+            />
+          </div>
+        )
+      }
+
       return <span key={index}>{part}</span>
     })
+  }
+
+  // Render multimedia attachments (GIFs, images, videos, audio, documents)
+  const renderAttachments = () => {
+    if (!message.attachments || message.attachments.length === 0) return null
+
+    return (
+      <div className="flex flex-wrap gap-2 mt-2">
+        {message.attachments.map((att: TeamChatAttachment, i: number) => {
+          const isImageOrGif =
+            att.type?.startsWith("image/") ||
+            att.url.toLowerCase().endsWith(".gif") ||
+            att.url.toLowerCase().endsWith(".png") ||
+            att.url.toLowerCase().endsWith(".jpg") ||
+            att.url.toLowerCase().endsWith(".jpeg") ||
+            att.url.toLowerCase().endsWith(".webp")
+
+          const isVideo =
+            att.type?.startsWith("video/") ||
+            att.url.toLowerCase().endsWith(".mp4") ||
+            att.url.toLowerCase().endsWith(".webm")
+
+          const isAudio =
+            att.type?.startsWith("audio/") ||
+            att.url.toLowerCase().endsWith(".mp3") ||
+            att.url.toLowerCase().endsWith(".ogg") ||
+            att.url.toLowerCase().endsWith(".wav")
+
+          if (isImageOrGif) {
+            return (
+              <div key={i} className="relative group/att rounded-xl overflow-hidden border border-border shadow-xs max-w-sm">
+                <img
+                  src={att.url}
+                  alt={att.name}
+                  className="max-h-72 w-auto object-contain cursor-pointer transition-transform hover:scale-[1.01]"
+                  onClick={() => window.open(att.url, "_blank")}
+                  loading="lazy"
+                />
+              </div>
+            )
+          }
+
+          if (isVideo) {
+            return (
+              <div key={i} className="rounded-xl overflow-hidden border border-border shadow-xs max-w-sm">
+                <video src={att.url} controls className="max-h-72 w-full rounded-xl" />
+              </div>
+            )
+          }
+
+          if (isAudio) {
+            return (
+              <div key={i} className="w-full max-w-sm">
+                <audio src={att.url} controls className="w-full" />
+              </div>
+            )
+          }
+
+          // Document / other file
+          return (
+            <a
+              key={i}
+              href={att.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 text-xs hover:bg-muted/80 transition-colors shadow-xs"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <FileText className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium max-w-[180px]">{att.name}</div>
+                {att.size && (
+                  <div className="text-[10px] text-muted-foreground">
+                    {(att.size / 1024).toFixed(1)} KB
+                  </div>
+                )}
+              </div>
+              <Download className="h-4 w-4 text-muted-foreground shrink-0" />
+            </a>
+          )
+        })}
+      </div>
+    )
   }
 
   // Aggregate reactions by emoji
@@ -145,6 +248,9 @@ export function TeamMessageBubble({
         <div className="text-xs leading-relaxed text-foreground break-words">
           {renderFormattedContent()}
         </div>
+
+        {/* Multimedia Attachments (Images, GIFs, Videos, Docs) */}
+        {renderAttachments()}
 
         {/* Reactions row */}
         {reactionMap.size > 0 && (

@@ -1,12 +1,14 @@
 "use client"
 
-import React, { useState, useRef, useEffect, useCallback } from "react"
+import React, { useState, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, AtSign, Smile, Users, UserCheck } from "lucide-react"
+import { Send, AtSign, Paperclip, X, Image as ImageIcon, Users, UserCheck, Loader2 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import type { TaggedContactInfo } from "@/types"
+import { uploadAccountMedia } from "@/lib/storage/upload-media"
+import { toast } from "sonner"
+import type { TeamChatAttachment } from "@/types"
 
 interface MentionMember {
   user_id: string
@@ -24,7 +26,12 @@ interface MentionContact {
 }
 
 interface TeamMessageComposerProps {
-  onSendMessage: (content: string, taggedContactIds: string[], mentionedUserIds: string[]) => Promise<void>
+  onSendMessage: (
+    content: string,
+    taggedContactIds: string[],
+    mentionedUserIds: string[],
+    attachments?: TeamChatAttachment[]
+  ) => Promise<void>
   disabled?: boolean
   placeholder?: string
 }
@@ -32,10 +39,13 @@ interface TeamMessageComposerProps {
 export function TeamMessageComposer({
   onSendMessage,
   disabled = false,
-  placeholder = "Message #channel... Type @ to mention teammates or tag customer contacts",
+  placeholder = "Message #channel... Type @ to mention, or attach GIFs/media",
 }: TeamMessageComposerProps) {
   const [content, setContent] = useState("")
   const [sending, setSending] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [attachments, setAttachments] = useState<TeamChatAttachment[]>([])
+
   const [showMentionMenu, setShowMentionMenu] = useState(false)
   const [mentionTab, setMentionTab] = useState<"team" | "contacts">("team")
   const [mentionQuery, setMentionQuery] = useState("")
@@ -46,6 +56,7 @@ export function TeamMessageComposer({
   const [mentionedUsers, setMentionedUsers] = useState<Map<string, MentionMember>>(new Map())
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const mentionMenuRef = useRef<HTMLDivElement>(null)
 
   // Fetch mentions based on query
@@ -79,6 +90,52 @@ export function TeamMessageComposer({
       fetchMentions(query)
     } else {
       setShowMentionMenu(false)
+    }
+  }
+
+  // Handle file uploads (Images, GIFs, Videos, Documents)
+  const handleFileUpload = async (file: File) => {
+    setUploading(true)
+    try {
+      const { publicUrl } = await uploadAccountMedia("chat-media", file)
+      const newAttachment: TeamChatAttachment = {
+        url: publicUrl,
+        name: file.name,
+        size: file.size,
+        type: file.type || "application/octet-stream",
+      }
+      setAttachments((prev) => [...prev, newAttachment])
+      toast.success(`Attached ${file.name}`)
+    } catch (err) {
+      console.error("Attachment upload failed:", err)
+      toast.error(err instanceof Error ? err.message : "Failed to upload file")
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) {
+      handleFileUpload(files[0])
+    }
+  }
+
+  // Handle paste for GIFs / images from clipboard
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const file = items[i].getAsFile()
+        if (file) {
+          e.preventDefault()
+          handleFileUpload(file)
+          return
+        }
+      }
     }
   }
 
@@ -162,21 +219,27 @@ export function TeamMessageComposer({
   }
 
   const handleSend = async () => {
-    if (!content.trim() || sending || disabled) return
+    const hasContent = content.trim().length > 0
+    const hasAttachments = attachments.length > 0
+    if ((!hasContent && !hasAttachments) || sending || disabled || uploading) return
 
     // Extract all tagged contact IDs from content tokens `@{contact:<id>:<name>}`
     const contactIdMatches = Array.from(content.matchAll(/@\{contact:([a-f0-9-]+):[^}]+\}/g)).map(
       (m) => m[1]
     )
     const taggedIds = Array.from(new Set([...contactIdMatches, ...Array.from(taggedContacts.keys())]))
-
-    // Extract mentioned user IDs
     const mentionedIds = Array.from(mentionedUsers.keys())
 
     setSending(true)
     try {
-      await onSendMessage(content, taggedIds, mentionedIds)
+      await onSendMessage(
+        content.trim() || (hasAttachments ? "[Attachment]" : ""),
+        taggedIds,
+        mentionedIds,
+        attachments
+      )
       setContent("")
+      setAttachments([])
       setTaggedContacts(new Map())
       setMentionedUsers(new Map())
       setShowMentionMenu(false)
@@ -187,6 +250,59 @@ export function TeamMessageComposer({
 
   return (
     <div className="relative border-t border-border/60 bg-card p-3">
+      {/* Hidden File Input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileInputChange}
+        accept="image/*,video/*,audio/*,.gif,.pdf,.doc,.docx,.xls,.xlsx,.zip"
+        className="hidden"
+      />
+
+      {/* Attachments Preview Bar */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2 p-2 rounded-lg bg-muted/40 border border-border/60">
+          {attachments.map((att, i) => {
+            const isImageOrGif =
+              att.type?.startsWith("image/") ||
+              att.url.endsWith(".gif") ||
+              att.url.endsWith(".png") ||
+              att.url.endsWith(".jpg") ||
+              att.url.endsWith(".webp")
+
+            return (
+              <div
+                key={i}
+                className="relative group flex items-center gap-2 rounded-lg border border-border bg-card p-1.5 pr-3 shadow-xs"
+              >
+                {isImageOrGif ? (
+                  <img
+                    src={att.url}
+                    alt={att.name}
+                    className="h-10 w-10 rounded-md object-cover border border-border"
+                  />
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <ImageIcon className="h-5 w-5" />
+                  </div>
+                )}
+                <div className="max-w-[140px] truncate text-xs font-medium">
+                  {att.name}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+                  className="rounded-full p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  title="Remove attachment"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Floating Mention Autocomplete Menu */}
       {showMentionMenu && (
         <div
@@ -314,6 +430,7 @@ export function TeamMessageComposer({
 
       {/* Composer Input Area */}
       <div className="flex items-end gap-2 rounded-xl border border-border/80 bg-background px-3 py-2 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/30 transition-all">
+        {/* Mention Button */}
         <Button
           type="button"
           size="icon"
@@ -325,9 +442,26 @@ export function TeamMessageComposer({
             fetchMentions("")
             textareaRef.current?.focus()
           }}
-          title="Mention a teammate or tag customer contact (@)"
+          title="Mention teammate or tag customer contact (@)"
         >
           <AtSign className="h-4 w-4" />
+        </Button>
+
+        {/* Attachment Upload Button (GIFs, Images, Multimedia) */}
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={uploading}
+          className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 rounded-lg"
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach GIFs, images, videos or documents"
+        >
+          {uploading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          ) : (
+            <Paperclip className="h-4 w-4" />
+          )}
         </Button>
 
         <Textarea
@@ -335,8 +469,9 @@ export function TeamMessageComposer({
           value={content}
           onChange={handleContentChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={placeholder}
-          disabled={disabled || sending}
+          disabled={disabled || sending || uploading}
           className="min-h-[38px] max-h-32 flex-1 resize-none border-0 bg-transparent p-1 text-sm shadow-none focus-visible:ring-0 placeholder:text-muted-foreground"
           rows={1}
         />
@@ -345,7 +480,7 @@ export function TeamMessageComposer({
           type="button"
           size="sm"
           onClick={handleSend}
-          disabled={!content.trim() || sending || disabled}
+          disabled={(!content.trim() && attachments.length === 0) || sending || disabled || uploading}
           className="h-8 px-3 shrink-0 rounded-lg gap-1.5 shadow-sm"
         >
           <span>Send</span>

@@ -149,7 +149,8 @@ export default function TeamChatPage() {
   const handleSendMessage = async (
     content: string,
     taggedContactIds: string[],
-    mentionedUserIds: string[]
+    mentionedUserIds: string[],
+    attachments?: any[]
   ) => {
     if (!activeRoomId) return
 
@@ -161,6 +162,7 @@ export default function TeamChatPage() {
           content,
           tagged_contact_ids: taggedContactIds,
           mentioned_user_ids: mentionedUserIds,
+          attachments: attachments || [],
         }),
       })
 
