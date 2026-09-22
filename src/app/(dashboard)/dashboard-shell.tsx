@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { GlobalPresenceProvider } from "@/hooks/use-global-presence";
+import { GlobalNotificationProvider } from "@/hooks/use-global-notifications";
 import { CommandMenu } from "@/components/layout/command-menu";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
@@ -81,7 +82,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
       <GlobalPresenceProvider>
-        <DashboardShellInner>{children}</DashboardShellInner>
+        <GlobalNotificationProvider>
+          <DashboardShellInner>{children}</DashboardShellInner>
+        </GlobalNotificationProvider>
       </GlobalPresenceProvider>
     </AuthProvider>
   );

@@ -61,7 +61,7 @@ export async function POST(req: Request) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('account_id')
+    .select('account_id, full_name')
     .eq('user_id', user.id)
     .single();
 
@@ -99,6 +99,26 @@ export async function POST(req: Request) {
       .single();
 
     if (error) throw error;
+
+    if (finalAssigneeId !== user.id) {
+      try {
+        await supabase.from('notifications').insert({
+          account_id: profile.account_id,
+          user_id: finalAssigneeId,
+          type: 'task_assigned',
+          title: `📋 New Task Assigned: "${title}"`,
+          body: priority === 'urgent' || priority === 'high'
+            ? `Priority: ${priority.toUpperCase()} • Due: ${tDate}`
+            : `Assigned by ${profile.full_name || 'a teammate'} • Due: ${tDate}`,
+          link: '/tasks',
+          read: false,
+          metadata: { task_id: data.id, priority, target_date: tDate }
+        });
+      } catch (notifErr) {
+        console.debug('[action-items] Notification insert ignored:', notifErr);
+      }
+    }
+
     return NextResponse.json(data);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

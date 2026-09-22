@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { cn } from "@/lib/utils";
 
 const pageTitles: Record<string, string> = {
@@ -160,6 +161,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
           </DropdownMenu>
 
           <ModeToggle />
+          <NotificationBell />
 
           {/* Account menu */}
           <DropdownMenu>
