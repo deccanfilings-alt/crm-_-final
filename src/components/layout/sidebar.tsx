@@ -193,12 +193,12 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
         )}
         aria-label="Primary"
       >
-        <div className={cn("flex h-14 shrink-0 items-center gap-2 border-b border-border px-4", isCollapsed ? "justify-center px-0 lg:px-0" : "justify-between")}>
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <div className={cn("flex h-14 shrink-0 items-center gap-2 border-b border-border/80 px-4", isCollapsed ? "justify-center px-0 lg:px-0" : "justify-between")}>
+          <Link href="/dashboard" className="flex items-center gap-2.5 group">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-xs shadow-primary/30 transition-transform duration-200 group-hover:scale-105">
               <MessageSquare className="h-4 w-4" />
             </div>
-            <span className={cn("text-sm font-semibold text-foreground transition-opacity", isCollapsed && "lg:hidden")}>
+            <span className={cn("text-sm font-bold tracking-tight text-foreground transition-opacity", isCollapsed && "lg:hidden")}>
               Deccan Filings
             </span>
           </Link>
@@ -233,15 +233,15 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                     href={item.href}
                     className={cn(
                       // Taller on mobile so fingers can hit the row reliably (≥44px).
-                      "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2 overflow-hidden",
+                      "group relative flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 lg:py-2 overflow-hidden",
                       isCollapsed ? "justify-center lg:px-0" : "gap-3",
                       isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        ? "bg-primary/12 text-primary font-semibold shadow-xs before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-primary before:shadow-[0_0_8px_var(--color-primary)]"
+                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
                     )}
                   >
-                    <div className="relative flex shrink-0 items-center justify-center">
-                      <item.icon className="h-4 w-4" />
+                    <div className="relative flex shrink-0 items-center justify-center transition-transform duration-150 group-hover:scale-105">
+                      <item.icon className={cn("h-4 w-4 transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
                       {showUnreadDot && (
                         <span
                           aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
@@ -252,7 +252,7 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                         </span>
                       )}
                     </div>
-                    <span className={cn("flex-1 truncate", isCollapsed && "lg:hidden")}>{item.label}</span>
+                    <span className={cn("flex-1 truncate tracking-tight", isCollapsed && "lg:hidden")}>{item.label}</span>
                     {item.beta && !isCollapsed && (
                       <span
                         aria-label="Beta feature"
@@ -299,15 +299,15 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                   <Link
                     href={item.href}
                     className={cn(
-                      "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      "group relative flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 lg:py-2 overflow-hidden",
                       isCollapsed ? "justify-center lg:px-0" : "gap-3",
                       isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        ? "bg-primary/12 text-primary font-semibold shadow-xs before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-primary before:shadow-[0_0_8px_var(--color-primary)]"
+                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
                     )}
                   >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    <span className={cn("truncate", isCollapsed && "lg:hidden")}>{item.label}</span>
+                    <item.icon className={cn("h-4 w-4 shrink-0 transition-all duration-150 group-hover:scale-105", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                    <span className={cn("truncate tracking-tight", isCollapsed && "lg:hidden")}>{item.label}</span>
                   </Link>
                 );
 

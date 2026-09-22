@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   X,
   ChevronDown,
+  Search,
 } from "lucide-react";
 import {
   Avatar,
@@ -80,22 +81,45 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     "U";
 
   return (
-    <div className="flex flex-col shrink-0 border-b border-border">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-3 bg-background px-4 lg:px-6">
-        <div className="flex min-w-0 items-center gap-2">
+    <div className="flex flex-col shrink-0 border-b border-border/80 sticky top-0 z-40">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-3 glass-header px-4 lg:px-6">
+        <div className="flex min-w-0 items-center gap-3">
           {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
           <button
             type="button"
             onClick={onOpenSidebar}
             aria-label="Open menu"
-            className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden cursor-pointer"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
+          <h1 className="truncate text-base font-semibold text-foreground sm:text-lg tracking-tight">
             {title}
           </h1>
         </div>
+
+        {/* Universal Command Search Trigger */}
+        <button
+          type="button"
+          onClick={() => {
+            const downEvent = new KeyboardEvent("keydown", {
+              key: "k",
+              ctrlKey: true,
+              bubbles: true,
+            });
+            document.dispatchEvent(downEvent);
+          }}
+          className="hidden md:flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground transition-all hover:border-primary/40 hover:bg-muted/70 hover:text-foreground cursor-pointer w-48 lg:w-72 justify-between shadow-2xs group"
+          title="Search anything (Ctrl+K)"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Search className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            <span className="truncate">Search CRM or jump to...</span>
+          </div>
+          <kbd className="pointer-events-none hidden h-4.5 select-none items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium opacity-80 sm:flex">
+            <span>Ctrl</span>K
+          </kbd>
+        </button>
 
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Prominent Quick Status Switcher */}
