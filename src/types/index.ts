@@ -162,6 +162,9 @@ export interface Conversation {
   assigned_at?: string;
   last_message_text?: string;
   last_message_at?: string;
+  last_customer_message_at?: string | null;
+  sla_breached_at?: string | null;
+  sla_threshold_minutes?: number | null;
   unread_count: number;
   created_at: string;
   updated_at: string;

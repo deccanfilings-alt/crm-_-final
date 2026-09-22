@@ -221,6 +221,8 @@ async function processInstagramWebhook(entries: InstagramWebhookEntry[]) {
               unread_count: 1,
               last_message_text: text,
               last_message_at: new Date().toISOString(),
+              last_customer_message_at: new Date().toISOString(),
+              sla_breached_at: null,
             })
             .select()
             .single();
@@ -238,6 +240,8 @@ async function processInstagramWebhook(entries: InstagramWebhookEntry[]) {
               unread_count: (conversation.unread_count || 0) + 1,
               last_message_text: text || 'Media attachment',
               last_message_at: new Date().toISOString(),
+              last_customer_message_at: new Date().toISOString(),
+              sla_breached_at: null,
             })
             .eq('id', conversation.id);
         }
