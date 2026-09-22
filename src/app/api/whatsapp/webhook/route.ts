@@ -26,6 +26,20 @@ function supabaseAdmin() {
   return _adminClient
 }
 
+// Bounded in-memory idempotency cache to protect against duplicate webhook deliveries
+const PROCESSED_WEBHOOK_MESSAGES_LIMIT = 5000
+const processedWebhookMessages = new Set<string>()
+
+function recordProcessedWebhookMessage(id: string): boolean {
+  if (processedWebhookMessages.has(id)) return false
+  if (processedWebhookMessages.size >= PROCESSED_WEBHOOK_MESSAGES_LIMIT) {
+    const firstItem = processedWebhookMessages.values().next().value
+    if (firstItem) processedWebhookMessages.delete(firstItem)
+  }
+  processedWebhookMessages.add(id)
+  return true
+}
+
 interface WhatsAppMessage {
   id: string
   from: string
@@ -551,6 +565,24 @@ async function processMessage(
   accessToken: string,
   phoneNumberId: string
 ) {
+  // Webhook Idempotency Check: Prevent duplicate processing on Meta retries
+  if (message.id) {
+    if (!recordProcessedWebhookMessage(message.id)) {
+      console.log('[webhook] Skipping duplicate message (in-memory):', message.id)
+      return
+    }
+
+    const { data: existingMsg } = await supabaseAdmin()
+      .from('messages')
+      .select('id')
+      .eq('message_id', message.id)
+      .maybeSingle()
+    if (existingMsg) {
+      console.log('[webhook] Skipping already persisted message:', message.id)
+      return
+    }
+  }
+
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
 

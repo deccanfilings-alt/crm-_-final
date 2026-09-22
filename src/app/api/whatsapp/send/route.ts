@@ -4,9 +4,14 @@ import {
   sendTextMessage,
   sendTemplateMessage,
   sendMediaMessage,
+  sendInteractiveButtons,
+  sendInteractiveList,
   MetaApiError,
   type MediaKind,
+  type InteractiveButton,
+  type InteractiveListSection,
 } from '@/lib/whatsapp/meta-api'
+import { check24HourServiceWindow, parseMetaError } from '@/lib/whatsapp/meta-errors'
 import { sendInstagramMessage, sendFacebookMessage } from '@/lib/meta/channels-api'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
@@ -71,6 +76,11 @@ export async function POST(request: Request) {
       template_message_params,
       reply_to_message_id,
       is_internal,
+      buttons,
+      button_label,
+      sections,
+      header_text,
+      footer_text,
     } = body
 
     if (!conversation_id || !message_type) {
@@ -83,10 +93,17 @@ export async function POST(request: Request) {
     const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const
     const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(message_type)
 
-    const VALID_MESSAGE_TYPES = ['text', 'template', ...MEDIA_KINDS] as const
+    const VALID_MESSAGE_TYPES = ['text', 'template', 'interactive', ...MEDIA_KINDS] as const
     if (!(VALID_MESSAGE_TYPES as readonly string[]).includes(message_type)) {
       return NextResponse.json(
         { error: `Unsupported message_type "${message_type}"` },
+        { status: 400 }
+      )
+    }
+
+    if (message_type === 'interactive' && (!buttons && !sections)) {
+      return NextResponse.json(
+        { error: 'Interactive messages require buttons (1-3) or sections (1-10 rows)' },
         { status: 400 }
       )
     }
@@ -243,6 +260,33 @@ export async function POST(request: Request) {
         )
       }
 
+      // Proactive 24-Hour Customer Service Window Guard
+      // WhatsApp requires approved templates to message outside the 24h window
+      if (message_type !== 'template' && !is_internal) {
+        const { data: lastCustomerMsg } = await supabase
+          .from('messages')
+          .select('created_at')
+          .eq('conversation_id', conversation_id)
+          .eq('sender_type', 'customer')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        const windowCheck = check24HourServiceWindow(lastCustomerMsg?.created_at)
+        if (windowCheck.isExpired) {
+          return NextResponse.json(
+            {
+              error:
+                'The 24-hour customer service window is closed. Meta requires an approved template message to contact this customer.',
+              code: 'WINDOW_EXPIRED',
+              isWindowExpired: true,
+              action: 'Please select an approved WhatsApp template to re-open the conversation.',
+            },
+            { status: 400 }
+          )
+        }
+      }
+
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
@@ -336,6 +380,36 @@ export async function POST(request: Request) {
             })
             return result.messageId
           }
+          if (message_type === 'interactive') {
+            if (buttons && Array.isArray(buttons) && buttons.length > 0) {
+              const result = await sendInteractiveButtons({
+                phoneNumberId: config.phone_number_id,
+                accessToken,
+                to: phone,
+                bodyText: content_text || 'Please select an option:',
+                headerText: header_text,
+                footerText: footer_text,
+                buttons: buttons as InteractiveButton[],
+                contextMessageId,
+              })
+              return result.messageId
+            }
+            if (sections && Array.isArray(sections) && sections.length > 0) {
+              const result = await sendInteractiveList({
+                phoneNumberId: config.phone_number_id,
+                accessToken,
+                to: phone,
+                bodyText: content_text || 'Please select an option:',
+                buttonLabel: button_label || 'View Options',
+                headerText: header_text,
+                footerText: footer_text,
+                sections: sections as InteractiveListSection[],
+                contextMessageId,
+              })
+              return result.messageId
+            }
+            throw new Error('Interactive message requires buttons or sections')
+          }
           if (isMediaKind) {
             const result = await sendMediaMessage({
               phoneNumberId: config.phone_number_id,
@@ -381,14 +455,18 @@ export async function POST(request: Request) {
 
           if (lastError) throw lastError
         } catch (err) {
-          const message = err instanceof Error ? err.message : 'Unknown Meta API error'
+          const parsed = parseMetaError(err)
+          const message = parsed.userMessage || (err instanceof Error ? err.message : 'Unknown Meta API error')
           console.error('Meta API send failed for all variants:', message)
 
           const errorDetails: Record<string, unknown> = {
             message,
+            code: parsed.numericCode || (err instanceof MetaApiError ? err.code : undefined),
+            parsed_code: parsed.code,
+            action: parsed.action,
+            is_window_expired: parsed.isWindowExpired,
           }
           if (err instanceof MetaApiError) {
-            if (err.code !== undefined) errorDetails.code = err.code
             if (err.subcode !== undefined) errorDetails.subcode = err.subcode
             if (err.details) errorDetails.details = err.details
             if (err.fbtraceId) errorDetails.fbtrace_id = err.fbtraceId
@@ -437,6 +515,9 @@ export async function POST(request: Request) {
           return NextResponse.json(
             {
               error: `Meta API error: ${message}`,
+              code: parsed.code,
+              action: parsed.action,
+              isWindowExpired: parsed.isWindowExpired,
               error_details: errorDetails,
               message_id: savedFailedMsg?.id,
             },
