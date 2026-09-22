@@ -158,7 +158,7 @@ export function NotificationBell() {
           {filteredNotifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 px-4 text-center text-muted-foreground">
               <Bell className="h-8 w-8 mb-2 opacity-30" />
-              <p className="text-xs font-medium text-foreground">You're all caught up</p>
+              <p className="text-xs font-medium text-foreground">You&apos;re all caught up</p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
                 New task assignments and team mentions will appear here in real-time.
               </p>

@@ -196,20 +196,19 @@ export default function ContactsPage() {
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    let query = supabase
+    const query = supabase
       .from('contacts')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(from, to);
 
-    let filteredQuery = supabase
+    const filteredQuery = supabase
       .from('contacts')
       .select('*, contact_tags!inner(tag_id)', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(from, to)
       .eq('contact_tags.tag_id', filterTagId);
 
-    // @ts-ignore - TS complains about conditional query builder assignments
     let activeQuery = filterTagId === 'all' ? query : filteredQuery;
 
     if (search.trim()) {

@@ -1003,8 +1003,8 @@ export function AIReplyForm({
         rows={6}
       />
       <p className="text-[10px] text-muted-foreground -mt-3 mb-2">
-        Define the bot's persona and rules. It will automatically receive the 
-        conversation's <code className="rounded bg-muted px-1">vars</code> as context.
+        Define the bot&apos;s persona and rules. It will automatically receive the 
+        conversation&apos;s <code className="rounded bg-muted px-1">vars</code> as context.
       </p>
 
       {kbs.length > 0 && (

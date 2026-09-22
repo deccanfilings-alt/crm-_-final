@@ -153,6 +153,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (typeof global.DOMMatrix === 'undefined') {
         (global as any).DOMMatrix = class DOMMatrix {};
       }
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const pdfParse = require('pdf-parse')
       const data = await pdfParse(buffer)
       textContent = data.text

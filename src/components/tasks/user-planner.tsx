@@ -400,7 +400,7 @@ export function UserPlanner() {
             <Target className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold">No goals set</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Click "Add Goal" to set your first {periodType} target.
+              Click &quot;Add Goal&quot; to set your first {periodType} target.
             </p>
           </div>
         ) : (

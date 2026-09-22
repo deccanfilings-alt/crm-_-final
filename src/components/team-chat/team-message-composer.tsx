@@ -419,7 +419,7 @@ export function TeamMessageComposer({
             {mentionTab === "team" ? (
               matchingSpecials.length === 0 && mentionMembers.length === 0 ? (
                 <div className="py-4 text-center text-muted-foreground text-xs">
-                  No teammates or broadcast mentions found matching "@{mentionQuery}"
+                  No teammates or broadcast mentions found matching &quot;@{mentionQuery}&quot;
                 </div>
               ) : (
                 <>
@@ -532,7 +532,7 @@ export function TeamMessageComposer({
               )
             ) : mentionContacts.length === 0 ? (
               <div className="py-4 text-center text-muted-foreground text-xs">
-                No customer contacts found matching "@{mentionQuery}"
+                No customer contacts found matching &quot;@{mentionQuery}&quot;
               </div>
             ) : (
               mentionContacts.map((contact, idx) => {

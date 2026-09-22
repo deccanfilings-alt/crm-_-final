@@ -26,7 +26,7 @@ export async function GET() {
     }
 
     // Fetch existing rooms
-    let { data: rooms, error: roomsError } = await supabaseAdmin()
+    const { data: initialRooms, error: roomsError } = await supabaseAdmin()
       .from('team_rooms')
       .select('*')
       .eq('account_id', accountId)
@@ -36,6 +36,8 @@ export async function GET() {
       console.error('[team-chat] Error fetching rooms:', roomsError)
       return NextResponse.json({ error: 'Failed to fetch rooms' }, { status: 500 })
     }
+
+    let rooms = initialRooms
 
     // Auto-seed default #general room if no rooms exist yet
     if (!rooms || rooms.length === 0) {
@@ -133,7 +135,8 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    let { name, description } = body
+    const { description } = body
+    let { name } = body
 
     if (!name || typeof name !== 'string') {
       return NextResponse.json({ error: 'Room name is required' }, { status: 400 })

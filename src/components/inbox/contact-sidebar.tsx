@@ -153,7 +153,8 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
         query = query.eq("account_id", accountId);
       }
 
-      let { data: pList, error: pError } = await query;
+      const { data: initialPList, error: pError } = await query;
+      let pList = initialPList;
 
       // Fallback: If account_id filter returned empty or error, fetch all visible via RLS
       if (pError || !pList || pList.length === 0) {
