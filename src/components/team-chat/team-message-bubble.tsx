@@ -1,25 +1,30 @@
 "use client"
 
-import React from "react"
+import React, { useState } from "react"
 import { format } from "date-fns"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Crown, Shield, UserCog, UserCheck, FileText, Download, Play, Megaphone, Users, CircleDot } from "lucide-react"
+import { Crown, Shield, UserCog, UserCheck, FileText, Download, Megaphone, Users, CircleDot, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { TeamMessage, TaggedContactInfo, TeamChatAttachment } from "@/types"
 
 interface TeamMessageBubbleProps {
   message: TeamMessage
   currentUserId?: string
+  userRole?: string
   onToggleReaction: (messageId: string, emoji: string) => void
   onSelectContact: (contact: TaggedContactInfo) => void
+  onDeleteMessage?: (messageId: string) => void
 }
 
 export function TeamMessageBubble({
   message,
   currentUserId,
+  userRole = "agent",
   onToggleReaction,
   onSelectContact,
+  onDeleteMessage,
 }: TeamMessageBubbleProps) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const hasBroadcastMention =
     /@channel\b/i.test(message.content || "") ||
     /@everyone\b/i.test(message.content || "") ||
@@ -307,7 +312,7 @@ export function TeamMessageBubble({
       </div>
 
       {/* Hover Action Bar */}
-      <div className="absolute right-4 top-2 hidden group-hover:flex items-center gap-1 rounded-lg border border-border bg-popover/90 backdrop-blur-sm p-1 shadow-sm">
+      <div className="absolute right-4 top-2 hidden group-hover:flex items-center gap-1 rounded-lg border border-border bg-popover/90 backdrop-blur-sm p-1 shadow-sm z-10">
         {["👍", "❤️", "😂", "🚀"].map((emoji) => (
           <button
             key={emoji}
@@ -319,6 +324,43 @@ export function TeamMessageBubble({
             {emoji}
           </button>
         ))}
+
+        {currentUserId &&
+          (currentUserId === message.sender_id || userRole === "owner" || userRole === "admin") && (
+            <>
+              <div className="h-3.5 w-px bg-border/80 mx-0.5" />
+              {confirmDelete ? (
+                <div className="flex items-center gap-1 pl-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDeleteMessage?.(message.id)
+                      setConfirmDelete(false)
+                    }}
+                    className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors shadow-2xs"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 text-xs transition-colors"
+                  title="Delete message"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </>
+          )}
       </div>
     </div>
   )

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   sendInteractiveButtons,
   sendInteractiveList,
-  INTERACTIVE_LIMITS,
 } from './meta-api';
 
 describe('Meta API - Interactive Messages', () => {

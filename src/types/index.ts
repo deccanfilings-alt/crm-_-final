@@ -655,6 +655,9 @@ export interface TeamRoom {
   created_by?: string | null;
   created_at: string;
   updated_at: string;
+  is_direct?: boolean;
+  dm_user_ids?: string[];
+  dm_partner?: (TeamMessageSender & { agent_status?: string | null }) | null;
   last_message?: {
     content: string;
     sender_name?: string;

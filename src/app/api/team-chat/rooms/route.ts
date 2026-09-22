@@ -25,22 +25,23 @@ export async function GET() {
       return NextResponse.json({ error: 'No account linked' }, { status: 403 })
     }
 
-    // Fetch existing rooms
-    const { data: initialRooms, error: roomsError } = await supabaseAdmin()
+    // Fetch public channels (not direct messages)
+    const { data: initialChannels, error: roomsError } = await supabaseAdmin()
       .from('team_rooms')
       .select('*')
       .eq('account_id', accountId)
+      .or('is_direct.is.null,is_direct.eq.false')
       .order('created_at', { ascending: true })
 
     if (roomsError) {
-      console.error('[team-chat] Error fetching rooms:', roomsError)
-      return NextResponse.json({ error: 'Failed to fetch rooms' }, { status: 500 })
+      console.error('[team-chat] Error fetching channels:', roomsError)
+      return NextResponse.json({ error: 'Failed to fetch channels' }, { status: 500 })
     }
 
-    let rooms = initialRooms
+    let channels = initialChannels
 
-    // Auto-seed default #general room if no rooms exist yet
-    if (!rooms || rooms.length === 0) {
+    // Auto-seed default #general channel if no channels exist yet
+    if (!channels || channels.length === 0) {
       const { data: newRoom, error: seedError } = await supabaseAdmin()
         .from('team_rooms')
         .insert({
@@ -48,19 +49,19 @@ export async function GET() {
           name: 'general',
           description: 'Company-wide general discussions and announcements',
           created_by: user.id,
+          is_direct: false,
         })
         .select()
         .single()
 
       if (!seedError && newRoom) {
-        rooms = [newRoom]
+        channels = [newRoom]
       }
     }
 
-    // Fetch latest message for each room to display preview
-    const roomIds = (rooms || []).map((r: { id: string }) => r.id)
-    const roomsWithLastMessage = await Promise.all(
-      (rooms || []).map(async (room: any) => {
+    // Fetch latest message for each channel
+    const channelsWithLastMessage = await Promise.all(
+      (channels || []).map(async (room: any) => {
         const { data: lastMsg } = await supabaseAdmin()
           .from('team_messages')
           .select('content, created_at, sender_id')
@@ -81,6 +82,7 @@ export async function GET() {
 
         return {
           ...room,
+          is_direct: false,
           last_message: lastMsg
             ? {
                 content: lastMsg.content,
@@ -92,8 +94,50 @@ export async function GET() {
       })
     )
 
+    // Fetch all other teammates in the organization for starting DMs
+    const { data: teamMembers } = await supabaseAdmin()
+      .from('profiles')
+      .select('user_id, full_name, avatar_url, account_role, agent_status, email')
+      .eq('account_id', accountId)
+      .neq('user_id', user.id)
+
+    const teammateMap = new Map((teamMembers || []).map((t: any) => [t.user_id, t]))
+
+    // Fetch direct messages where user is a participant
+    const { data: rawDmRooms } = await supabaseAdmin()
+      .from('team_rooms')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('is_direct', true)
+      .contains('dm_user_ids', [user.id])
+      .order('updated_at', { ascending: false })
+
+    const directMessages = await Promise.all(
+      (rawDmRooms || []).map(async (dmRoom: any) => {
+        const partnerId = (dmRoom.dm_user_ids || []).find((uid: string) => uid !== user.id)
+        const partner = teammateMap.get(partnerId) || null
+
+        const { data: lastMsg } = await supabaseAdmin()
+          .from('team_messages')
+          .select('content, created_at, sender_id')
+          .eq('room_id', dmRoom.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        return {
+          ...dmRoom,
+          is_direct: true,
+          dm_partner: partner,
+          last_message: lastMsg || null,
+        }
+      })
+    )
+
     return NextResponse.json({
-      rooms: roomsWithLastMessage,
+      rooms: channelsWithLastMessage,
+      directMessages,
+      teammates: teamMembers || [],
       userRole: profile?.account_role || 'agent',
     })
   } catch (error) {

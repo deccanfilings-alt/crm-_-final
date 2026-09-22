@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   parseMetaError,
   check24HourServiceWindow,
-  META_ERROR_DESCRIPTIONS,
 } from './meta-errors';
 
 describe('Meta Errors & 24-Hour Service Window Diagnostics', () => {

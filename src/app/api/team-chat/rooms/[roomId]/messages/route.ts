@@ -298,3 +298,88 @@ export async function POST(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ roomId: string }> }
+) {
+  try {
+    const { roomId } = await params
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id, account_role')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json({ error: 'No account linked' }, { status: 403 })
+    }
+
+    // Extract message ID from query string or request body
+    const url = new URL(request.url)
+    let messageId = url.searchParams.get('messageId')
+    if (!messageId) {
+      try {
+        const body = await request.json()
+        messageId = body?.messageId || body?.id
+      } catch {
+        // body might be empty if query param was intended
+      }
+    }
+
+    if (!messageId) {
+      return NextResponse.json({ error: 'Message ID is required' }, { status: 400 })
+    }
+
+    // Verify message exists in this room and account
+    const { data: message, error: fetchErr } = await supabaseAdmin()
+      .from('team_messages')
+      .select('id, sender_id, account_id, room_id')
+      .eq('id', messageId)
+      .eq('room_id', roomId)
+      .eq('account_id', accountId)
+      .maybeSingle()
+
+    if (fetchErr || !message) {
+      return NextResponse.json({ error: 'Message not found' }, { status: 404 })
+    }
+
+    // Author or admin/owner can delete
+    const isAuthor = message.sender_id === user.id
+    const isAdminOrOwner = profile?.account_role === 'owner' || profile?.account_role === 'admin'
+
+    if (!isAuthor && !isAdminOrOwner) {
+      return NextResponse.json(
+        { error: 'You do not have permission to delete this message' },
+        { status: 403 }
+      )
+    }
+
+    const { error: delErr } = await supabaseAdmin()
+      .from('team_messages')
+      .delete()
+      .eq('id', messageId)
+
+    if (delErr) {
+      console.error('[team-chat] Failed to delete message:', delErr)
+      return NextResponse.json({ error: 'Failed to delete message' }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, messageId })
+  } catch (error) {
+    console.error('[team-chat] DELETE room message unexpected error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
