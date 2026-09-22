@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, AtSign, Paperclip, X, Image as ImageIcon, Users, UserCheck, Loader2 } from "lucide-react"
+import { Send, AtSign, Paperclip, X, Image as ImageIcon, Users, UserCheck, Loader2, Megaphone, CircleDot } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { uploadAccountMedia } from "@/lib/storage/upload-media"
@@ -24,6 +24,42 @@ interface MentionContact {
   avatar_url?: string | null
   conversation_id?: string | null
 }
+
+interface SpecialMention {
+  id: string
+  name: string
+  label: string
+  description: string
+  badge: string
+  icon: "channel" | "everyone" | "here"
+}
+
+const SPECIAL_MENTIONS: SpecialMention[] = [
+  {
+    id: "special-channel",
+    name: "channel",
+    label: "@channel",
+    description: "Notify all members in this channel",
+    badge: "Channel",
+    icon: "channel",
+  },
+  {
+    id: "special-everyone",
+    name: "everyone",
+    label: "@everyone",
+    description: "Notify all organization team members",
+    badge: "All Org",
+    icon: "everyone",
+  },
+  {
+    id: "special-here",
+    name: "here",
+    label: "@here",
+    description: "Notify only online and active members",
+    badge: "Online Only",
+    icon: "here",
+  },
+]
 
 interface TeamMessageComposerProps {
   onSendMessage: (
@@ -139,6 +175,29 @@ export function TeamMessageComposer({
     }
   }
 
+  const matchingSpecials = SPECIAL_MENTIONS.filter(
+    (sm) =>
+      sm.name.toLowerCase().includes(mentionQuery.toLowerCase()) ||
+      sm.label.toLowerCase().includes(mentionQuery.toLowerCase()) ||
+      sm.description.toLowerCase().includes(mentionQuery.toLowerCase())
+  )
+
+  // Insert a broadcast mention (@channel, @everyone, @here)
+  const selectSpecialMention = (sm: SpecialMention) => {
+    if (!textareaRef.current) return
+    const cursorPos = textareaRef.current.selectionStart || 0
+    const textBeforeCursor = content.slice(0, cursorPos)
+    const textAfterCursor = content.slice(cursorPos)
+
+    const replacedText = textBeforeCursor.replace(/@([a-zA-Z0-9_-]*)$/, `${sm.label} `)
+    setContent(replacedText + textAfterCursor)
+    setShowMentionMenu(false)
+
+    setTimeout(() => {
+      textareaRef.current?.focus()
+    }, 10)
+  }
+
   // Insert a teammate mention
   const selectMember = (member: MentionMember) => {
     if (!textareaRef.current) return
@@ -178,7 +237,10 @@ export function TeamMessageComposer({
   // Handle keyboard events (Arrow keys, Enter, Esc)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentionMenu) {
-      const activeListLength = mentionTab === "team" ? mentionMembers.length : mentionContacts.length
+      const activeListLength =
+        mentionTab === "team"
+          ? matchingSpecials.length + mentionMembers.length
+          : mentionContacts.length
 
       if (e.key === "ArrowDown") {
         e.preventDefault()
@@ -198,8 +260,15 @@ export function TeamMessageComposer({
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault()
-        if (mentionTab === "team" && mentionMembers[mentionIndex]) {
-          selectMember(mentionMembers[mentionIndex])
+        if (mentionTab === "team") {
+          if (mentionIndex < matchingSpecials.length) {
+            selectSpecialMention(matchingSpecials[mentionIndex])
+          } else {
+            const memberIdx = mentionIndex - matchingSpecials.length
+            if (mentionMembers[memberIdx]) {
+              selectMember(mentionMembers[memberIdx])
+            }
+          }
         } else if (mentionTab === "contacts" && mentionContacts[mentionIndex]) {
           selectContact(mentionContacts[mentionIndex])
         }
@@ -325,7 +394,7 @@ export function TeamMessageComposer({
               )}
             >
               <Users className="h-3.5 w-3.5 text-primary" />
-              Teammates ({mentionMembers.length})
+              Teammates ({matchingSpecials.length + mentionMembers.length})
             </button>
             <button
               type="button"
@@ -348,40 +417,118 @@ export function TeamMessageComposer({
           {/* List items */}
           <div className="max-h-56 overflow-y-auto p-1 text-xs">
             {mentionTab === "team" ? (
-              mentionMembers.length === 0 ? (
+              matchingSpecials.length === 0 && mentionMembers.length === 0 ? (
                 <div className="py-4 text-center text-muted-foreground text-xs">
-                  No teammates found matching "@{mentionQuery}"
+                  No teammates or broadcast mentions found matching "@{mentionQuery}"
                 </div>
               ) : (
-                mentionMembers.map((member, idx) => {
-                  const isSelected = idx === mentionIndex
-                  return (
-                    <button
-                      key={member.user_id}
-                      type="button"
-                      onClick={() => selectMember(member)}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
-                        isSelected ? "bg-primary text-primary-foreground font-medium" : "hover:bg-muted"
-                      )}
-                    >
-                      <Avatar className="h-6 w-6">
-                        <AvatarImage src={member.avatar_url || undefined} />
-                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                          {member.full_name?.slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium text-xs">
-                          {member.full_name}
-                        </div>
-                        <div className={cn("text-[10px]", isSelected ? "text-primary-foreground/80" : "text-muted-foreground")}>
-                          {member.account_role || "member"}
-                        </div>
+                <>
+                  {matchingSpecials.length > 0 && (
+                    <div className="mb-1.5 pb-1 border-b border-border/50">
+                      <div className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                        <Megaphone className="h-3 w-3 text-amber-500" />
+                        Broadcast Mentions
                       </div>
-                    </button>
-                  )
-                })
+                      {matchingSpecials.map((sm, idx) => {
+                        const isSelected = idx === mentionIndex
+                        return (
+                          <button
+                            key={sm.id}
+                            type="button"
+                            onClick={() => selectSpecialMention(sm)}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors cursor-pointer",
+                              isSelected
+                                ? "bg-amber-500 text-white font-medium"
+                                : "hover:bg-amber-500/10 text-foreground"
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs",
+                                isSelected
+                                  ? "bg-white/20 border-white/40 text-white"
+                                  : "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400"
+                              )}
+                            >
+                              {sm.icon === "channel" ? (
+                                <Megaphone className="h-3.5 w-3.5" />
+                              ) : sm.icon === "everyone" ? (
+                                <Users className="h-3.5 w-3.5" />
+                              ) : (
+                                <CircleDot className="h-3.5 w-3.5" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-semibold text-xs flex items-center justify-between">
+                                <span>{sm.label}</span>
+                                <span
+                                  className={cn(
+                                    "text-[9px] px-1.5 py-0.2 rounded font-normal uppercase",
+                                    isSelected
+                                      ? "bg-white/20 text-white"
+                                      : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                  )}
+                                >
+                                  {sm.badge}
+                                </span>
+                              </div>
+                              <div
+                                className={cn(
+                                  "text-[10px] truncate",
+                                  isSelected ? "text-white/80" : "text-muted-foreground"
+                                )}
+                              >
+                                {sm.description}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {mentionMembers.length > 0 && (
+                    <div>
+                      {matchingSpecials.length > 0 && (
+                        <div className="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                          <Users className="h-3 w-3 text-primary" />
+                          Individual Teammates
+                        </div>
+                      )}
+                      {mentionMembers.map((member, idx) => {
+                        const overallIndex = matchingSpecials.length + idx
+                        const isSelected = overallIndex === mentionIndex
+                        return (
+                          <button
+                            key={member.user_id}
+                            type="button"
+                            onClick={() => selectMember(member)}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors cursor-pointer",
+                              isSelected ? "bg-primary text-primary-foreground font-medium" : "hover:bg-muted"
+                            )}
+                          >
+                            <Avatar className="h-6 w-6">
+                              <AvatarImage src={member.avatar_url || undefined} />
+                              <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                                {member.full_name?.slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium text-xs">
+                                {member.full_name}
+                              </div>
+                              <div className={cn("text-[10px]", isSelected ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                                {member.account_role || "member"}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
               )
             ) : mentionContacts.length === 0 ? (
               <div className="py-4 text-center text-muted-foreground text-xs">

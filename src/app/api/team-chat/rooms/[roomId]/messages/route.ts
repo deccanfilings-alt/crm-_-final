@@ -204,6 +204,35 @@ export async function POST(
 
     const trimmedContent = content.trim()
 
+    // Resolve broadcast mentions (@channel, @everyone, @here)
+    const hasChannelMention = /@channel\b/i.test(trimmedContent)
+    const hasEveryoneMention = /@everyone\b/i.test(trimmedContent)
+    const hasHereMention = /@here\b/i.test(trimmedContent)
+
+    let finalMentionedIds: string[] = Array.isArray(mentioned_user_ids)
+      ? [...mentioned_user_ids]
+      : []
+
+    if (hasChannelMention || hasEveryoneMention || hasHereMention) {
+      const { data: teamProfiles } = await supabaseAdmin()
+        .from('profiles')
+        .select('user_id, agent_status')
+        .eq('account_id', accountId)
+
+      if (teamProfiles && teamProfiles.length > 0) {
+        if (hasHereMention && !hasChannelMention && !hasEveryoneMention) {
+          const onlineIds = teamProfiles
+            .filter((p: any) => p.agent_status === 'online')
+            .map((p: any) => p.user_id)
+          finalMentionedIds.push(...onlineIds)
+        } else {
+          finalMentionedIds.push(...teamProfiles.map((p: any) => p.user_id))
+        }
+      }
+    }
+
+    finalMentionedIds = Array.from(new Set(finalMentionedIds.filter(Boolean)))
+
     // Insert message into database
     const { data: message, error: insertError } = await supabaseAdmin()
       .from('team_messages')
@@ -213,7 +242,7 @@ export async function POST(
         sender_id: user.id,
         content: trimmedContent,
         attachments: Array.isArray(attachments) ? attachments : [],
-        mentioned_user_ids: Array.isArray(mentioned_user_ids) ? mentioned_user_ids : [],
+        mentioned_user_ids: finalMentionedIds,
         tagged_contact_ids: Array.isArray(tagged_contact_ids) ? tagged_contact_ids : [],
         reply_to_id: reply_to_id || null,
       })

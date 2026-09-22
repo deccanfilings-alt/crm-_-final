@@ -3,7 +3,7 @@
 import React from "react"
 import { format } from "date-fns"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Crown, Shield, UserCog, UserCheck, FileText, Download, Play } from "lucide-react"
+import { Crown, Shield, UserCog, UserCheck, FileText, Download, Play, Megaphone, Users, CircleDot } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { TeamMessage, TaggedContactInfo, TeamChatAttachment } from "@/types"
 
@@ -20,7 +20,13 @@ export function TeamMessageBubble({
   onToggleReaction,
   onSelectContact,
 }: TeamMessageBubbleProps) {
-  const isMentioned = currentUserId && message.mentioned_user_ids?.includes(currentUserId)
+  const hasBroadcastMention =
+    /@channel\b/i.test(message.content || "") ||
+    /@everyone\b/i.test(message.content || "") ||
+    /@here\b/i.test(message.content || "")
+  const isMentioned =
+    currentUserId &&
+    (hasBroadcastMention || message.mentioned_user_ids?.includes(currentUserId))
   const time = format(new Date(message.created_at), "HH:mm")
 
   const senderRole = message.sender?.account_role || "agent"
@@ -73,8 +79,33 @@ export function TeamMessageBubble({
         )
       }
 
-      // Check if this part is a user mention (e.g. @John Doe or @all)
+      // Check if this part is a user mention or broadcast mention
       if (part.startsWith("@")) {
+        const trimmed = part.trim()
+        const lower = trimmed.toLowerCase()
+        const isChannel = lower === "@channel"
+        const isEveryone = lower === "@everyone"
+        const isHere = lower === "@here"
+        const isBroadcast = isChannel || isEveryone || isHere
+
+        if (isBroadcast) {
+          return (
+            <span
+              key={index}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-xs mx-0.5 select-none bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 shadow-xs"
+            >
+              {isChannel ? (
+                <Megaphone className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+              ) : isEveryone ? (
+                <Users className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+              ) : (
+                <CircleDot className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+              )}
+              <span>{trimmed}</span>
+            </span>
+          )
+        }
+
         return (
           <span
             key={index}
