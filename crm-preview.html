@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="en" data-mode="dark" data-theme="violet">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deccan Filings AI CRM — 10/10 UI & Aesthetics Preview</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* Design Tokens matching src/app/globals.css exactly */
+    :root, html[data-mode="dark"] {
+      --bg: #0d0f14;
+      --bg-surface: #141721;
+      --bg-card: #181c29;
+      --bg-card-hover: #1e2333;
+      --bg-muted: #202638;
+      --border: #262c3f;
+      --border-subtle: #1e2436;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-subtle: #64748b;
+      
+      --primary: #8b5cf6;
+      --primary-hover: #7c3aed;
+      --primary-soft: rgba(139, 92, 246, 0.12);
+      --primary-soft-border: rgba(139, 92, 246, 0.28);
+      --primary-glow: rgba(139, 92, 246, 0.35);
+
+      --success: #10b981;
+      --success-soft: rgba(16, 185, 129, 0.12);
+      --warning: #f59e0b;
+      --warning-soft: rgba(245, 158, 11, 0.12);
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.12);
+      --info: #3b82f6;
+      --info-soft: rgba(59, 130, 246, 0.12);
+
+      --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 2px 6px -1px rgba(0, 0, 0, 0.4);
+      --shadow-hover: 0 14px 34px -4px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(139, 92, 246, 0.3);
+      --glass-header: rgba(13, 15, 20, 0.82);
+    }
+
+    html[data-mode="light"] {
+      --bg: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f1f5f9;
+      --bg-muted: #f1f5f9;
+      --border: #e2e8f0;
+      --border-subtle: #f1f5f9;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --text-subtle: #94a3b8;
+      
+      --primary: #7c3aed;
+      --primary-hover: #6d28d9;
+      --primary-soft: rgba(124, 58, 237, 0.08);
+      --primary-soft-border: rgba(124, 58, 237, 0.22);
+      --primary-glow: rgba(124, 58, 237, 0.2);
+
+      --success: #059669;
+      --success-soft: rgba(5, 150, 105, 0.1);
+      --warning: #d97706;
+      --warning-soft: rgba(217, 119, 6, 0.1);
+      --danger: #dc2626;
+      --danger-soft: rgba(220, 38, 38, 0.1);
+      --info: #2563eb;
+      --info-soft: rgba(37, 99, 235, 0.1);
+
+      --shadow-card: 0 4px 18px -2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+      --shadow-hover: 0 16px 36px -6px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(124, 58, 237, 0.3);
+      --glass-header: rgba(248, 250, 252, 0.85);
+    }
+
+    /* Accent themes */
+    html[data-theme="emerald"] {
+      --primary: #10b981;
+      --primary-hover: #059669;
+      --primary-soft: rgba(16, 185, 129, 0.12);
+      --primary-soft-border: rgba(16, 185, 129, 0.28);
+      --primary-glow: rgba(16, 185, 129, 0.35);
+    }
+    html[data-theme="cobalt"] {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: rgba(37, 99, 235, 0.12);
+      --primary-soft-border: rgba(37, 99, 235, 0.28);
+      --primary-glow: rgba(37, 99, 235, 0.35);
+    }
+    html[data-theme="amber"] {
+      --primary: #f59e0b;
+      --primary-hover: #d97706;
+      --primary-soft: rgba(245, 158, 11, 0.14);
+      --primary-soft-border: rgba(245, 158, 11, 0.3);
+      --primary-glow: rgba(245, 158, 11, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      overflow-x: hidden;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    /* Slim scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.25);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.45);
+    }
+
+    /* Layout structure */
+    .app-sidebar {
+      width: 260px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      flex-shrink: 0;
+      transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 40;
+    }
+
+    .app-sidebar.collapsed {
+      width: 76px;
+    }
+
+    .sidebar-brand {
+      height: 60px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+
+    .brand-logo-badge {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 4px 12px var(--primary-glow);
+      flex-shrink: 0;
+      transition: transform 0.2s ease;
+    }
+    .brand-logo-badge:hover {
+      transform: scale(1.05);
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+      transition: opacity 0.2s ease;
+    }
+
+    .collapsed .brand-title,
+    .collapsed .nav-label,
+    .collapsed .role-chip,
+    .collapsed .user-meta,
+    .collapsed .collapse-text,
+    .collapsed .badge-counter {
+      display: none !important;
+    }
+
+    .nav-list {
+      list-style: none;
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .nav-item-btn {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    .nav-item-btn:hover {
+      background: var(--bg-muted);
+      color: var(--text);
+    }
+
+    .nav-item-btn.active {
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-weight: 600;
+    }
+
+    .nav-item-btn.active::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 3.5px;
+      border-radius: 0 4px 4px 0;
+      background: var(--primary);
+      box-shadow: 0 0 10px var(--primary);
+    }
+
+    .nav-item-btn svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      transition: transform 0.15s ease;
+    }
+    .nav-item-btn:hover svg {
+      transform: scale(1.06);
+    }
+
+    .badge-counter {
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 7px;
+      border-radius: 9999px;
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--primary);
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      box-shadow: 0 0 8px var(--primary);
+    }
+
+    .sidebar-footer {
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .collapse-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 7px 12px;
+      border-radius: 8px;
+      background: transparent;
+      border: none;
+      color: var(--text-subtle);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .collapse-toggle-btn:hover {
+      background: var(--bg-muted);
+      color: var(--text);
+    }
+
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: transparent;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+    .user-pill:hover {
+      background: var(--bg-muted);
+      border-color: var(--border);
+    }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      color: white;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .avatar-online-ring {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #10b981;
+      border: 2px solid var(--bg-surface);
+    }
+
+    /* Main Container */
+    .app-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    /* Glass Header */
+    .app-header {
+      height: 60px;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: var(--glass-header);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      gap: 16px;
+    }
+
+    /* Universal Command Search Trigger */
+    .command-search-trigger {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 7px 14px;
+      width: 340px;
+      max-width: 100%;
+      color: var(--text-muted);
+      font-size: 13px;
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .command-search-trigger:hover {
+      border-color: var(--primary-soft-border);
+      background: var(--bg-card-hover);
+      color: var(--text);
+      box-shadow: 0 4px 16px -2px var(--primary-soft);
+    }
+
+    .kbd-shortcut {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-subtle);
+      background: var(--bg-muted);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--success);
+      background: var(--success-soft);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      border-radius: 9999px;
+      padding: 4px 11px;
+    }
+
+    .status-dot-live {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: statusPulse 2s infinite ease-in-out;
+    }
+    @keyframes statusPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: 0.55; }
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.15s ease;
+    }
+    .icon-btn:hover {
+      background: var(--bg-card-hover);
+      color: var(--text);
+      border-color: var(--primary-soft-border);
+    }
+    .icon-btn .bell-badge {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      background: #ef4444;
+      color: white;
+      font-size: 10px;
+      font-weight: 800;
+      height: 16px;
+      width: 16px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid var(--bg);
+    }
+
+    /* Content Area */
+    .app-content {
+      flex: 1;
+      padding: 28px 32px 60px 32px;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Welcome Hero */
+    .welcome-hero {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .welcome-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 4px;
+    }
+    .welcome-sub {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-secondary:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--primary-soft-border);
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+      border: none;
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 4px 14px var(--primary-glow);
+      transition: all 0.15s ease;
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px var(--primary-glow);
+    }
+
+    /* Metric Cards Grid */
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+    .metric-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-hover);
+      border-color: var(--primary-soft-border);
+    }
+
+    /* Ambient corner luminous halo */
+    .metric-card::after {
+      content: '';
+      position: absolute;
+      top: -30px;
+      right: -30px;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      background: var(--primary);
+      opacity: 0;
+      filter: blur(40px);
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+    .metric-card:hover::after {
+      opacity: 0.18;
+    }
+
+    .metric-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .metric-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .metric-icon-box {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s ease;
+    }
+    .metric-card:hover .metric-icon-box {
+      transform: scale(1.08);
+    }
+
+    .metric-value {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .trend-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 9999px;
+    }
+    .trend-up {
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+    }
+    .trend-down {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+
+    .metric-footer {
+      font-size: 12px;
+      color: var(--text-subtle);
+      margin-left: 8px;
+    }
+
+    /* Section Title */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Quick Actions Grid */
+    .quick-actions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 32px;
+    }
+
+    .action-tile {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      text-decoration: none;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .action-tile:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-hover);
+      border-color: var(--primary-soft-border);
+    }
+
+    .tile-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .action-icon-circle {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s ease;
+    }
+    .action-tile:hover .action-icon-circle {
+      transform: scale(1.08);
+    }
+
+    .arrow-indicator {
+      color: var(--text-subtle);
+      opacity: 0;
+      transform: translate(-3px, 3px);
+      transition: all 0.2s ease;
+    }
+    .action-tile:hover .arrow-indicator {
+      opacity: 1;
+      transform: translate(0, 0);
+      color: var(--primary);
+    }
+
+    .action-name {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.25;
+    }
+    .action-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.35;
+    }
+
+    /* Team Productivity & Active Chats Grid */
+    .bottom-split-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 1024px) {
+      .bottom-split-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Table Styles */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    .data-table th {
+      padding: 12px 20px;
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-subtle);
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .data-table td {
+      padding: 14px 20px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text);
+    }
+    .data-table tr:hover td {
+      background: var(--bg-muted);
+    }
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .agent-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .agent-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .agent-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 9999px;
+    }
+    .agent-online {
+      background: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .agent-busy {
+      background: rgba(245, 158, 11, 0.12);
+      color: #f59e0b;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .agent-offline {
+      background: rgba(148, 163, 184, 0.12);
+      color: #94a3b8;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    .csat-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #f59e0b;
+      background: rgba(245, 158, 11, 0.12);
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+
+    /* Live Chat List */
+    .chat-stream-list {
+      display: flex;
+      flex-direction: column;
+    }
+    .chat-item {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      gap: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .chat-item:hover {
+      background: var(--bg-muted);
+    }
+    .chat-item:last-child {
+      border-bottom: none;
+    }
+    .chat-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .chat-contact-name {
+      font-size: 13.5px;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .chat-time {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-subtle);
+    }
+    .chat-preview-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Command Palette Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 14vh;
+    }
+    .modal-overlay.open {
+      display: flex;
+    }
+    .command-box {
+      width: 580px;
+      max-width: 90vw;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 24px 60px -10px rgba(0,0,0,0.7), 0 0 0 1px var(--primary-soft-border);
+      overflow: hidden;
+      animation: modalPop 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalPop {
+      from { opacity: 0; transform: scale(0.96) translateY(-10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .command-input-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .command-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      font-size: 15px;
+      color: var(--text);
+    }
+    .command-input::placeholder {
+      color: var(--text-subtle);
+    }
+    .command-results {
+      padding: 10px;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .command-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-subtle);
+      padding: 8px 12px 4px 12px;
+    }
+    .command-result-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.1s ease;
+    }
+    .command-result-item:hover, .command-result-item.selected {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .command-footer {
+      padding: 10px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-surface);
+      font-size: 11.5px;
+      color: var(--text-subtle);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Notification Bell Dropdown */
+    .notification-dropdown {
+      position: absolute;
+      top: 48px;
+      right: 0;
+      width: 340px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 16px 38px -6px rgba(0,0,0,0.6);
+      z-index: 50;
+      display: none;
+      overflow: hidden;
+    }
+    .notification-dropdown.open {
+      display: block;
+    }
+    .notification-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      gap: 10px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .notification-item:hover {
+      background: var(--bg-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== SIDEBAR ==================== -->
+  <aside class="app-sidebar" id="sidebar">
+    <!-- Brand Header -->
+    <div class="sidebar-brand">
+      <div class="brand-logo-badge">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+        </svg>
+      </div>
+      <span class="brand-title">Deccan Filings</span>
+    </div>
+
+    <!-- Navigation List -->
+    <ul class="nav-list">
+      <li>
+        <a class="nav-item-btn active" href="#dashboard" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="7" height="9" x="3" y="3" rx="1" />
+            <rect width="7" height="5" x="14" y="3" rx="1" />
+            <rect width="7" height="9" x="14" y="12" rx="1" />
+            <rect width="7" height="5" x="3" y="16" rx="1" />
+          </svg>
+          <span class="nav-label">Dashboard</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#inbox" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span class="nav-label">Inbox</span>
+          <span class="pulse-dot"></span>
+          <span class="badge-counter">4</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#team-chat" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 21a8 8 0 0 0-16 0"/>
+            <circle cx="10" cy="8" r="5"/>
+            <path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>
+          </svg>
+          <span class="nav-label">Team Chat</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#contacts" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span class="nav-label">Contacts</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#pipelines" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" x2="6" y1="3" y2="15"/>
+            <circle cx="18" cy="6" r="3"/>
+            <circle cx="6" cy="18" r="3"/>
+            <path d="M18 9a9 9 0 0 1-9 9"/>
+          </svg>
+          <span class="nav-label">Pipelines</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#broadcasts" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m3 11 18-5v12L3 14v-3z"/>
+            <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
+          </svg>
+          <span class="nav-label">Broadcasts</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#action-items" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m9 11 3 3L22 4"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          <span class="nav-label">My Action Items</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#automations" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          <span class="nav-label">Automations</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#flows" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 8V4H8"/>
+            <rect width="16" height="12" x="4" y="8" rx="2"/>
+            <path d="M2 14h2"/>
+            <path d="M20 14h2"/>
+            <path d="M15 13v2"/>
+            <path d="M9 13v2"/>
+          </svg>
+          <span class="nav-label">AI Flows</span>
+        </a>
+      </li>
+      <li>
+        <a class="nav-item-btn" href="#knowledge" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+            <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>
+          </svg>
+          <span class="nav-label">Knowledge</span>
+        </a>
+      </li>
+      <li style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px;">
+        <a class="nav-item-btn" href="#settings" onclick="setActiveNav(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <span class="nav-label">Settings</span>
+        </a>
+      </li>
+    </ul>
+
+    <!-- Sidebar Footer -->
+    <div class="sidebar-footer">
+      <button class="collapse-toggle-btn" onclick="toggleSidebarCollapse()" title="Toggle Sidebar">
+        <svg id="collapse-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+        <span class="collapse-text">Collapse Menu</span>
+      </button>
+
+      <div class="user-pill">
+        <div class="avatar">
+          R
+          <span class="avatar-online-ring"></span>
+        </div>
+        <div class="user-meta" style="flex: 1; min-width: 0;">
+          <div style="font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Rajesh Kumar</div>
+          <div style="font-size: 11px; color: var(--text-muted); white-space: nowrap;">Owner • Online</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== MAIN ==================== -->
+  <main class="app-main">
+    <!-- Frosted Sticky Header -->
+    <header class="app-header">
+      <!-- Universal Command Search -->
+      <div class="command-search-trigger" onclick="openCommandModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.3-4.3"/>
+        </svg>
+        <span>Search CRM or jump to...</span>
+        <span class="kbd-shortcut">Ctrl K</span>
+      </div>
+
+      <!-- Right Header Actions -->
+      <div class="header-actions">
+        <!-- Live WhatsApp Connection Status -->
+        <div class="status-badge" title="Official WhatsApp Cloud API Connected">
+          <span class="status-dot-live"></span>
+          <span>WhatsApp API Live</span>
+        </div>
+
+        <!-- Color Accent Picker -->
+        <select onchange="changeTheme(this.value)" style="background: var(--bg-card); border: 1px solid var(--border); color: var(--text); padding: 5px 8px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; outline: none;">
+          <option value="violet">Violet Theme</option>
+          <option value="emerald">Emerald Theme</option>
+          <option value="cobalt">Cobalt Theme</option>
+          <option value="amber">Amber Theme</option>
+        </select>
+
+        <!-- Dark/Light Mode Toggle -->
+        <button class="icon-btn" onclick="toggleMode()" title="Toggle Dark / Light Mode">
+          <svg id="theme-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2"/>
+            <path d="M12 20v2"/>
+            <path d="m4.93 4.93 1.41 1.41"/>
+            <path d="m17.66 17.66 1.41 1.41"/>
+            <path d="M2 12h2"/>
+            <path d="M20 12h2"/>
+            <path d="m6.34 17.66-1.41 1.41"/>
+            <path d="m19.07 4.93-1.41 1.41"/>
+          </svg>
+        </button>
+
+        <!-- Notification Bell -->
+        <div style="position: relative;">
+          <button class="icon-btn" onclick="toggleNotifications()" title="Notifications">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+            </svg>
+            <span class="bell-badge">3</span>
+          </button>
+          
+          <!-- Dropdown -->
+          <div class="notification-dropdown" id="notificationDropdown">
+            <div style="padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; display: flex; justify-content: space-between;">
+              <span>Realtime Notifications</span>
+              <span style="color: var(--primary); font-size: 11px; cursor: pointer;">Mark all read</span>
+            </div>
+            <div class="notification-item">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--primary); margin-top: 5px; flex-shrink: 0;"></div>
+              <div>
+                <div style="font-size: 12.5px; font-weight: 600;">Priya mentioned you in Team Chat</div>
+                <div style="font-size: 11px; color: var(--text-muted);">"Can you verify the GST filing for client 9848?" • 2m ago</div>
+              </div>
+            </div>
+            <div class="notification-item">
+              <div style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; margin-top: 5px; flex-shrink: 0;"></div>
+              <div>
+                <div style="font-size: 12.5px; font-weight: 600;">High Intent Lead Created</div>
+                <div style="font-size: 11px; color: var(--text-muted);">Suresh Kumar clicked "Pvt Ltd Registration" • 12m ago</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Dashboard Main View -->
+    <div class="app-content">
+      <!-- Welcome Hero -->
+      <div class="welcome-hero">
+        <div>
+          <h1 class="welcome-title">Enterprise Dashboard</h1>
+          <p class="welcome-sub">Welcome back, Rajesh. Your team has 24 open conversations across 3 pipelines today.</p>
+        </div>
+        <div class="hero-actions">
+          <button class="btn-secondary" onclick="alert('Exporting full analytics CSV...')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" x2="12" y1="15" y2="3"/>
+            </svg>
+            Export Report
+          </button>
+          <button class="btn-primary" onclick="openCommandModal()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Quick Create
+          </button>
+        </div>
+      </div>
+
+      <!-- Linear-Grade Luminous Metric Cards -->
+      <div class="metric-grid">
+        <!-- Card 1 -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">Active Inquiries</span>
+            <div class="metric-icon-box" style="background: rgba(139, 92, 246, 0.12); color: var(--primary);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+            </div>
+          </div>
+          <div class="metric-value">1,248</div>
+          <div style="display: flex; align-items: center;">
+            <span class="trend-pill trend-up">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              +14.2%
+            </span>
+            <span class="metric-footer">vs last month</span>
+          </div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">Messages Sent (Today)</span>
+            <div class="metric-icon-box" style="background: rgba(16, 185, 129, 0.12); color: #10b981;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+            </div>
+          </div>
+          <div class="metric-value">3,892</div>
+          <div style="display: flex; align-items: center;">
+            <span class="trend-pill trend-up">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              +8.7%
+            </span>
+            <span class="metric-footer">99.4% delivered</span>
+          </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">Avg. Response Time</span>
+            <div class="metric-icon-box" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+            </div>
+          </div>
+          <div class="metric-value">1m 42s</div>
+          <div style="display: flex; align-items: center;">
+            <span class="trend-pill trend-up">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+              -18.4%
+            </span>
+            <span class="metric-footer">faster than target</span>
+          </div>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-title">Conversion Rate</span>
+            <div class="metric-icon-box" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+            </div>
+          </div>
+          <div class="metric-value">28.6%</div>
+          <div style="display: flex; align-items: center;">
+            <span class="trend-pill trend-up">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              +3.2%
+            </span>
+            <span class="metric-footer">142 deals closed</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Quick Action Tiles -->
+      <div class="section-header">
+        <h2 class="section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+          </svg>
+          Quick Operations
+        </h2>
+      </div>
+
+      <div class="quick-actions-grid">
+        <!-- Action 1 -->
+        <div class="action-tile" onclick="openCommandModal()">
+          <div class="tile-top">
+            <div class="action-icon-circle" style="background: rgba(16, 185, 129, 0.14); color: #10b981;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m3 11 18-5v12L3 14v-3z"/>
+                <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
+              </svg>
+            </div>
+            <svg class="arrow-indicator" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
+            </svg>
+          </div>
+          <div>
+            <div class="action-name">Send Broadcast</div>
+            <div class="action-desc">Campaigns & bulk WhatsApp notices</div>
+          </div>
+        </div>
+
+        <!-- Action 2 -->
+        <div class="action-tile" onclick="openCommandModal()">
+          <div class="tile-top">
+            <div class="action-icon-circle" style="background: rgba(59, 130, 246, 0.14); color: #3b82f6;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <line x1="19" y1="8" x2="19" y2="14"/>
+                <line x1="22" y1="11" x2="16" y2="11"/>
+              </svg>
+            </div>
+            <svg class="arrow-indicator" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
+            </svg>
+          </div>
+          <div>
+            <div class="action-name">Add New Contact</div>
+            <div class="action-desc">Lead intake & instant tagging</div>
+          </div>
+        </div>
+
+        <!-- Action 3 -->
+        <div class="action-tile" onclick="openCommandModal()">
+          <div class="tile-top">
+            <div class="action-icon-circle" style="background: rgba(139, 92, 246, 0.14); color: #8b5cf6;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 8V4H8"/>
+                <rect width="16" height="12" x="4" y="8" rx="2"/>
+                <path d="M2 14h2"/><path d="M20 14h2"/>
+              </svg>
+            </div>
+            <svg class="arrow-indicator" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
+            </svg>
+          </div>
+          <div>
+            <div class="action-name">AI Visual Flow</div>
+            <div class="action-desc">Build automated chatbot trees</div>
+          </div>
+        </div>
+
+        <!-- Action 4 -->
+        <div class="action-tile" onclick="openCommandModal()">
+          <div class="tile-top">
+            <div class="action-icon-circle" style="background: rgba(245, 158, 11, 0.14); color: #f59e0b;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/>
+              </svg>
+            </div>
+            <svg class="arrow-indicator" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
+            </svg>
+          </div>
+          <div>
+            <div class="action-name">Team Room</div>
+            <div class="action-desc">Internal @channel collaboration</div>
+          </div>
+        </div>
+
+        <!-- Action 5 -->
+        <div class="action-tile" onclick="openCommandModal()">
+          <div class="tile-top">
+            <div class="action-icon-circle" style="background: rgba(239, 68, 68, 0.14); color: #ef4444;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+                <path d="M18 9a9 9 0 0 1-9 9"/>
+              </svg>
+            </div>
+            <svg class="arrow-indicator" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
+            </svg>
+          </div>
+          <div>
+            <div class="action-name">Pipeline Deal</div>
+            <div class="action-desc">Move lead to GST or Pvt Ltd stage</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Split Layout: Team Productivity & Recent WhatsApp Chats -->
+      <div class="bottom-split-grid">
+        <!-- Team Productivity Table -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <div style="font-size: 15px; font-weight: 700;">Live Team Productivity</div>
+              <div style="font-size: 12px; color: var(--text-muted);">Real-time performance across all agents</div>
+            </div>
+            <span style="font-size: 11.5px; color: var(--text-subtle); background: var(--bg-muted); padding: 4px 10px; border-radius: 9999px; border: 1px solid var(--border);">
+              Today's Shift
+            </span>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Status</th>
+                <th>Resolved</th>
+                <th>Avg Reply</th>
+                <th>CSAT Rating</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="agent-cell">
+                    <div class="agent-avatar" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">
+                      PK
+                      <span class="avatar-online-ring"></span>
+                    </div>
+                    <div>
+                      <div style="font-weight: 700; font-size: 13.5px;">Priya Kumari</div>
+                      <div style="font-size: 11px; color: var(--text-muted);">Senior Consultant</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="agent-status-pill agent-online">
+                    <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span>
+                    Online
+                  </span>
+                </td>
+                <td style="font-weight: 700;">48 chats</td>
+                <td style="color: var(--text-muted);">1m 12s</td>
+                <td>
+                  <span class="csat-badge">★ 4.95</span>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="agent-cell">
+                    <div class="agent-avatar" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white;">
+                      AK
+                      <span class="avatar-online-ring"></span>
+                    </div>
+                    <div>
+                      <div style="font-weight: 700; font-size: 13.5px;">Arun Kumar</div>
+                      <div style="font-size: 11px; color: var(--text-muted);">Tax Filing Specialist</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="agent-status-pill agent-online">
+                    <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981;"></span>
+                    Online
+                  </span>
+                </td>
+                <td style="font-weight: 700;">41 chats</td>
+                <td style="color: var(--text-muted);">1m 35s</td>
+                <td>
+                  <span class="csat-badge">★ 4.90</span>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="agent-cell">
+                    <div class="agent-avatar" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white;">
+                      SR
+                    </div>
+                    <div>
+                      <div style="font-weight: 700; font-size: 13.5px;">Sneha Reddy</div>
+                      <div style="font-size: 11px; color: var(--text-muted);">Compliance Manager</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="agent-status-pill agent-busy">
+                    <span style="width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;"></span>
+                    In Meeting
+                  </span>
+                </td>
+                <td style="font-weight: 700;">29 chats</td>
+                <td style="color: var(--text-muted);">2m 10s</td>
+                <td>
+                  <span class="csat-badge">★ 4.82</span>
+                </td>
+              </tr>
+
+              <tr>
+                <td>
+                  <div class="agent-cell">
+                    <div class="agent-avatar" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: white;">
+                      DF
+                    </div>
+                    <div>
+                      <div style="font-weight: 700; font-size: 13.5px;">AI Copilot (Autopilot)</div>
+                      <div style="font-size: 11px; color: var(--text-muted);">Autonomous Flow</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span class="agent-status-pill agent-online" style="background: var(--primary-soft); color: var(--primary); border-color: var(--primary-soft-border);">
+                    <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--primary);"></span>
+                    24/7 Active
+                  </span>
+                </td>
+                <td style="font-weight: 700;">184 chats</td>
+                <td style="color: var(--text-muted);">0.4s</td>
+                <td>
+                  <span class="csat-badge" style="background: var(--primary-soft); color: var(--primary);">★ 4.98</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Recent WhatsApp Live Queue -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <div style="font-size: 15px; font-weight: 700;">Live WhatsApp Stream</div>
+              <div style="font-size: 12px; color: var(--text-muted);">Incoming customer queries</div>
+            </div>
+            <span class="status-dot-live"></span>
+          </div>
+
+          <div class="chat-stream-list">
+            <div class="chat-item" onclick="alert('Opening customer conversation...')">
+              <div class="avatar" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);">VK</div>
+              <div class="chat-meta">
+                <div class="chat-contact-name">
+                  <span>Vikram Kothari</span>
+                  <span class="chat-time">Just now</span>
+                </div>
+                <div class="chat-preview-text">"Hi, I want to file GST return for my LLP company..."</div>
+              </div>
+            </div>
+
+            <div class="chat-item" onclick="alert('Opening customer conversation...')">
+              <div class="avatar" style="background: linear-gradient(135deg, #10b981, #059669);">NJ</div>
+              <div class="chat-meta">
+                <div class="chat-contact-name">
+                  <span>Neha Joshi</span>
+                  <span class="chat-time">3m ago</span>
+                </div>
+                <div class="chat-preview-text">"Can you share the fee schedule for Trademark registration?"</div>
+              </div>
+            </div>
+
+            <div class="chat-item" onclick="alert('Opening customer conversation...')">
+              <div class="avatar" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9);">RS</div>
+              <div class="chat-meta">
+                <div class="chat-contact-name">
+                  <span>Rohit Sharma</span>
+                  <span class="chat-time">11m ago</span>
+                </div>
+                <div class="chat-preview-text">"Payment done for Private Limited Incorporation. What next?"</div>
+              </div>
+            </div>
+
+            <div class="chat-item" onclick="alert('Opening customer conversation...')">
+              <div class="avatar" style="background: linear-gradient(135deg, #ec4899, #db2777);">AD</div>
+              <div class="chat-meta">
+                <div class="chat-contact-name">
+                  <span>Ananya Deshmukh</span>
+                  <span class="chat-time">24m ago</span>
+                </div>
+                <div class="chat-preview-text">"Shared the PAN card and utility bill on your portal."</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ==================== COMMAND PALETTE MODAL ==================== -->
+  <div class="modal-overlay" id="commandModal" onclick="handleBackdropClick(event)">
+    <div class="command-box">
+      <div class="command-input-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input class="command-input" id="commandSearchInput" placeholder="Type a command or search contacts, deals, templates..." />
+        <span class="kbd-shortcut">ESC to close</span>
+      </div>
+
+      <div class="command-results">
+        <div class="command-group-title">Quick Actions</div>
+        <div class="command-result-item selected" onclick="closeCommandModal(); alert('Navigating to New WhatsApp Broadcast...');">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/></svg>
+          <span>Send Broadcast Campaign</span>
+        </div>
+        <div class="command-result-item" onclick="closeCommandModal(); alert('Navigating to Add Contact Modal...');">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <span>Create New Contact</span>
+        </div>
+        <div class="command-result-item" onclick="closeCommandModal(); alert('Opening Team Chat Room...');">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/></svg>
+          <span>Jump to Team Chat (@channel)</span>
+        </div>
+
+        <div class="command-group-title" style="margin-top: 8px;">Navigation</div>
+        <div class="command-result-item" onclick="closeCommandModal();">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/></svg>
+          <span>Go to Dashboard</span>
+        </div>
+        <div class="command-result-item" onclick="closeCommandModal();">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Go to WhatsApp Inbox</span>
+        </div>
+      </div>
+
+      <div class="command-footer">
+        <span>Navigation: ↑ ↓ Enter</span>
+        <span>Deccan Filings CRM Enterprise</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Toggle dark/light mode
+    function toggleMode() {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-mode') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-mode', next);
+    }
+
+    // Change accent theme
+    function changeTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+
+    // Toggle Sidebar collapse
+    function toggleSidebarCollapse() {
+      const sidebar = document.getElementById('sidebar');
+      const icon = document.getElementById('collapse-icon');
+      sidebar.classList.toggle('collapsed');
+      if (sidebar.classList.contains('collapsed')) {
+        icon.innerHTML = '<polyline points="9 18 15 12 9 6"></polyline>';
+      } else {
+        icon.innerHTML = '<polyline points="15 18 9 12 15 6"></polyline>';
+      }
+    }
+
+    // Active nav item switcher
+    function setActiveNav(element) {
+      document.querySelectorAll('.nav-item-btn').forEach(btn => btn.classList.remove('active'));
+      element.classList.add('active');
+    }
+
+    // Notification dropdown
+    function toggleNotifications() {
+      const dropdown = document.getElementById('notificationDropdown');
+      dropdown.classList.toggle('open');
+    }
+
+    // Command palette modal
+    function openCommandModal() {
+      const modal = document.getElementById('commandModal');
+      modal.classList.add('open');
+      setTimeout(() => {
+        document.getElementById('commandSearchInput').focus();
+      }, 50);
+    }
+
+    function closeCommandModal() {
+      const modal = document.getElementById('commandModal');
+      modal.classList.remove('open');
+    }
+
+    function handleBackdropClick(e) {
+      if (e.target.id === 'commandModal') {
+        closeCommandModal();
+      }
+    }
+
+    // Global keyboard listener for Ctrl+K and ESC
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openCommandModal();
+      }
+      if (e.key === 'Escape') {
+        closeCommandModal();
+        const dropdown = document.getElementById('notificationDropdown');
+        if (dropdown) dropdown.classList.remove('open');
+      }
+    });
+  </script>
+</body>
+</html>
