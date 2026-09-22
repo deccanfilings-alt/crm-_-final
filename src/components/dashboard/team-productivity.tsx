@@ -17,7 +17,7 @@ interface TeamProductivityProps {
 }
 
 export function TeamProductivity({ rows }: TeamProductivityProps) {
-  const { activeUserIds } = useGlobalPresence()
+  const { activeUserIds, userStatuses } = useGlobalPresence()
 
   if (!rows || rows.length === 0) {
     return (
@@ -50,11 +50,11 @@ export function TeamProductivity({ rows }: TeamProductivityProps) {
               .toUpperCase()
               
             const isConnected = activeUserIds.has(row.user_id)
-            let displayStatus = row.agent_status
+            const liveStatus = userStatuses[row.user_id]
+            let displayStatus = liveStatus || row.agent_status
             
-            // If they are not connected via Realtime, and they didn't explicitly set themselves
-            // to 'offline' (e.g. they just closed the browser), override to offline.
-            if (!isConnected && row.agent_status !== "offline") {
+            // If they are not connected via Realtime, override to offline.
+            if (!isConnected) {
               displayStatus = "offline"
             }
 

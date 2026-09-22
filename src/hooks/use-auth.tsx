@@ -22,6 +22,7 @@ import {
 
 interface Profile {
   id: string;
+  user_id?: string;
   full_name: string | null;
   email: string;
   avatar_url: string | null;
@@ -137,7 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // missing account collapses to null rather than a half-
           // populated row (shouldn't happen post-017 NOT NULL, but
           // belt-and-braces against forks running older schemas).
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, agent_status, account:accounts!inner(id, name, default_currency)",
+          "id, user_id, full_name, email, avatar_url, role, beta_features, account_id, account_role, agent_status, account:accounts!inner(id, name, default_currency)",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -186,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setProfile({
           id: data.id,
+          user_id: data.user_id,
           full_name: data.full_name,
           email: data.email,
           avatar_url: data.avatar_url,
