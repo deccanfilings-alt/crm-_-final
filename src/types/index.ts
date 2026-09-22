@@ -410,7 +410,8 @@ export type AutomationTriggerType =
   | 'new_contact_created'
   | 'conversation_assigned'
   | 'tag_added'
-  | 'time_based';
+  | 'time_based'
+  | 'sla_breach';
 
 export type AutomationStepType =
   | 'send_message'
@@ -424,9 +425,18 @@ export type AutomationStepType =
   | 'condition'
   | 'send_webhook'
   | 'close_conversation'
-  | 'ai_generate';
+  | 'ai_generate'
+  | 'trigger_flow';
 
 export type AutomationLogStatus = 'success' | 'partial' | 'failed';
+
+export interface SlaBreachTriggerConfig {
+  threshold_minutes: number;
+}
+
+export interface TriggerFlowStepConfig {
+  flow_id: string;
+}
 
 export interface KeywordMatchTriggerConfig {
   keywords: string[];

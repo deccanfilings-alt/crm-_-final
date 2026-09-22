@@ -204,20 +204,20 @@ describe("validateFlowForActivation — nodes", () => {
     ).toBe(true);
   });
 
-  it("flags send_buttons with more than 3 buttons (Meta limit)", () => {
+  it("flags send_buttons with more than 10 buttons (Meta list limit)", () => {
+    const buttons = Array.from({ length: 11 }, (_, i) => ({
+      reply_id: `b${i + 1}`,
+      title: `${i + 1}`,
+      next_node_key: "h",
+    }));
     const nodes = [
       { node_key: "s", node_type: "start", config: { next_node_key: "b" } },
       {
         node_key: "b",
         node_type: "send_buttons",
         config: {
-          text: "Hi",
-          buttons: [
-            { reply_id: "1", title: "1", next_node_key: "h" },
-            { reply_id: "2", title: "2", next_node_key: "h" },
-            { reply_id: "3", title: "3", next_node_key: "h" },
-            { reply_id: "4", title: "4", next_node_key: "h" },
-          ],
+          text: "pick one",
+          buttons,
         },
       },
       { node_key: "h", node_type: "handoff", config: {} },
@@ -231,7 +231,7 @@ describe("validateFlowForActivation — nodes", () => {
         (i) =>
           i.node_key === "b" &&
           i.field === "buttons" &&
-          i.message.includes("at most 3"),
+          i.message.includes("at most 10"),
       ),
     ).toBe(true);
   });

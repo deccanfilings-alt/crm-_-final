@@ -35,14 +35,14 @@ export interface ValidationIssue {
   message: string;
 }
 
-interface FlowInput {
+export interface FlowInput {
   name: string;
   trigger_type: "keyword" | "first_inbound_message" | "manual";
   trigger_config: Record<string, unknown>;
   entry_node_id: string | null;
 }
 
-interface NodeInput {
+export interface NodeInput {
   node_key: string;
   node_type: string;
   config: Record<string, unknown>;
@@ -130,6 +130,18 @@ export function validateFlowForActivation(
         });
       }
     }
+  }
+
+  // Zero-input cycle detection — flags fatal infinite loops of auto-advancing nodes
+  const zeroInputCycles = detectZeroInputCycles(nodes);
+  for (const cycle of zeroInputCycles) {
+    issues.push({
+      severity: "error",
+      scope: "flow",
+      node_key: cycle[0],
+      field: "graph",
+      message: `Zero-input infinite loop detected: ${cycle.join(" → ")}. The flow will loop indefinitely without waiting for user input.`,
+    });
   }
 
   return issues;
@@ -329,13 +341,13 @@ function validateNode(
           message: "Send-buttons needs at least one button.",
         });
       }
-      if (btns.length > INTERACTIVE_LIMITS.maxButtons) {
+      if (btns.length > 10) {
         issues.push({
           severity: "error",
           scope: "node",
           node_key: node.node_key,
           field: "buttons",
-          message: `WhatsApp allows at most ${INTERACTIVE_LIMITS.maxButtons} buttons per message.`,
+          message: "WhatsApp allows at most 10 buttons/options per message.",
         });
       }
       const seenIds = new Set<string>();
@@ -933,4 +945,72 @@ function outgoingEdges(node: NodeInput): string[] {
     default:
       return [];
   }
+}
+
+/**
+ * Set of node types that advance synchronously without waiting for user input or message roundtrips.
+ */
+export const AUTO_ADVANCE_NODE_TYPES = new Set<string>([
+  "start",
+  "condition",
+  "set_tag",
+  "http_fetch",
+]);
+
+/**
+ * Detects cycles in the subgraph of auto-advancing nodes.
+ * A cycle here represents a fatal zero-input infinite loop that would deadlock
+ * the runner into hitting the 64-hop execution overflow.
+ * Returns an array of detected cycle paths (e.g. [["cond_1", "tag_1", "cond_1"]]).
+ */
+export function detectZeroInputCycles(nodes: NodeInput[]): string[][] {
+  const nodeMap = new Map<string, NodeInput>(nodes.map((n) => [n.node_key, n]));
+  const autoAdvanceKeys = new Set(
+    nodes.filter((n) => AUTO_ADVANCE_NODE_TYPES.has(n.node_type)).map((n) => n.node_key)
+  );
+
+  const adj = new Map<string, string[]>();
+  for (const key of autoAdvanceKeys) {
+    const node = nodeMap.get(key)!;
+    const targets = outgoingEdges(node).filter((t) => autoAdvanceKeys.has(t));
+    adj.set(key, targets);
+  }
+
+  const visited = new Map<string, 0 | 1 | 2>();
+  for (const key of autoAdvanceKeys) {
+    visited.set(key, 0);
+  }
+
+  const cycles: string[][] = [];
+  const stack: string[] = [];
+
+  function dfs(curr: string) {
+    visited.set(curr, 1);
+    stack.push(curr);
+
+    const neighbors = adj.get(curr) || [];
+    for (const next of neighbors) {
+      const state = visited.get(next) ?? 0;
+      if (state === 1) {
+        const cycleStartIndex = stack.indexOf(next);
+        if (cycleStartIndex !== -1) {
+          const cyclePath = stack.slice(cycleStartIndex).concat(next);
+          cycles.push(cyclePath);
+        }
+      } else if (state === 0) {
+        dfs(next);
+      }
+    }
+
+    stack.pop();
+    visited.set(curr, 2);
+  }
+
+  for (const key of autoAdvanceKeys) {
+    if (visited.get(key) === 0) {
+      dfs(key);
+    }
+  }
+
+  return cycles;
 }

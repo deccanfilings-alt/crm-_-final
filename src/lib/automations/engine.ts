@@ -14,6 +14,7 @@ import {
   CreateDealStepConfig,
   AssignConversationStepConfig,
   AiGenerateStepConfig,
+  TriggerFlowStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate } from './meta-send'
@@ -641,6 +642,42 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       
       args.context.vars = { ...(args.context.vars || {}), ai_response: aiResponse }
       return `ai_generate: completed with ${cfg.provider}`
+    }
+
+    case 'trigger_flow': {
+      const cfg = (step.step_config || {}) as unknown as TriggerFlowStepConfig
+      if (!cfg?.flow_id) throw new Error('trigger_flow: flow_id is required')
+      if (!args.contactId) throw new Error('trigger_flow: contactId is required')
+
+      const { triggerFlowRun } = await import('@/lib/flows/engine')
+
+      let conversationId = args.context.conversation_id
+      if (!conversationId) {
+        const { data: conv } = await db
+          .from('conversations')
+          .select('id')
+          .eq('contact_id', args.contactId)
+          .eq('account_id', args.automation.account_id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        conversationId = conv?.id
+      }
+
+      if (!conversationId) {
+        throw new Error('trigger_flow: no active conversation found for contact')
+      }
+
+      const outcome = await triggerFlowRun({
+        accountId: args.automation.account_id,
+        flowId: cfg.flow_id,
+        contactId: args.contactId,
+        conversationId,
+        userId: args.automation.user_id,
+        initialVars: (args.context.vars as Record<string, unknown>) || {},
+      })
+
+      return `trigger_flow: launched flow ${cfg.flow_id} (outcome: ${outcome.outcome})`
     }
 
     default:

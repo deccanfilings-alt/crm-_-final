@@ -31,6 +31,7 @@ import {
   ArrowDown,
   ArrowUp,
   Sparkles,
+  Workflow,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -101,11 +102,13 @@ export const STEP_META: Record<AutomationStepType, StepMeta> = {
   send_webhook: { label: "Send Webhook", icon: Webhook, border: "border-l-primary" },
   close_conversation: { label: "Close Conversation", icon: CircleSlash, border: "border-l-primary" },
   ai_generate: { label: "AI Generate", icon: Sparkles, border: "border-l-purple-500" },
+  trigger_flow: { label: "Trigger Flow", icon: Workflow, border: "border-l-indigo-500" },
 }
 
 export const ADDABLE_STEPS: AutomationStepType[] = [
   "send_message",
   "send_template",
+  "trigger_flow",
   "add_tag",
   "remove_tag",
   "assign_conversation",
@@ -130,6 +133,7 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType; label: string; hint: stri
   { value: "conversation_assigned", label: "Conversation Assigned", hint: "When assigned to an agent" },
   { value: "tag_added", label: "Tag Added", hint: "When a tag is added to a contact" },
   { value: "time_based", label: "Time-Based", hint: "On a recurring schedule" },
+  { value: "sla_breach", label: "SLA Breach", hint: "When customer response time breaches threshold" },
 ]
 
 export function cid(): string {
@@ -165,7 +169,9 @@ export function blankConfig(type: AutomationStepType): Record<string, unknown> {
     case "close_conversation":
       return {}
     case "ai_generate":
-      return { provider: "openai", model: "gpt-4o", system_prompt: "You are a helpful assistant.", prompt: "{{ message.text }}" }
+      return { provider: "openai", model: "gpt-4o-mini", prompt: "" }
+    case "trigger_flow":
+      return { flow_id: "" }
     default:
       return {}
   }
@@ -1301,6 +1307,20 @@ export function StepEditor({
           </div>
         </>
       )
+    case "trigger_flow":
+      return (
+        <FieldBlock label="Conversational Flow ID / UUID">
+          <Input
+            value={(cfg.flow_id as string) ?? ""}
+            onChange={(e) => set({ flow_id: e.target.value })}
+            placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
+            className="bg-muted font-mono text-xs text-foreground"
+          />
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Launches this interactive visual Flow for the contact and conversation.
+          </p>
+        </FieldBlock>
+      )
     default:
       return null
   }
@@ -1333,6 +1353,8 @@ export function previewFor(step: BuilderStep): string {
       return `when ${step.step_config.subject ?? "?"}`
     case "send_webhook":
       return (step.step_config.url as string) || "no url"
+    case "trigger_flow":
+      return `flow: ${(step.step_config.flow_id as string) || "unspecified"}`
     default:
       return ""
   }

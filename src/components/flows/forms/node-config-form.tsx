@@ -333,9 +333,14 @@ function SendButtonsForm({
       />
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-xs text-muted-foreground">
-            Buttons (1–3) — each one routes to a different next node
+          <label className="text-xs font-medium text-foreground">
+            Buttons / Options ({buttons.length}/10)
           </label>
+          <span className="text-[10px] text-muted-foreground">
+            {buttons.length <= 3
+              ? "Renders as WhatsApp Quick Reply buttons"
+              : "Adapts to WhatsApp Interactive List Menu (up to 10)"}
+          </span>
         </div>
         <div className="flex flex-col gap-3">
           {buttons.map((b, i) => (
@@ -385,7 +390,7 @@ function SendButtonsForm({
             </div>
           ))}
         </div>
-        {buttons.length < 3 && (
+        {buttons.length < 10 && (
           <Button
             variant="ghost"
             size="sm"
@@ -393,7 +398,7 @@ function SendButtonsForm({
             className="mt-2"
           >
             <Plus className="h-3.5 w-3.5" />
-            Add button
+            Add button ({buttons.length}/10)
           </Button>
         )}
       </div>

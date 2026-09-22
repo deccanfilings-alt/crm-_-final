@@ -365,16 +365,44 @@ async function sendButtonsAndSuspend(
   node: FlowNodeRow,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
-  const { whatsapp_message_id } = await engineSendInteractiveButtons({
-    accountId: run.account_id,
-    userId: run.user_id,
-    conversationId: run.conversation_id!,
-    contactId: run.contact_id!,
-    bodyText: cfg.text,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
-    buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
-  });
+  let whatsapp_message_id = "";
+
+  if (cfg.buttons.length <= 3) {
+    // 1-3 buttons: send as native Quick Reply buttons
+    const res = await engineSendInteractiveButtons({
+      accountId: run.account_id,
+      userId: run.user_id,
+      conversationId: run.conversation_id!,
+      contactId: run.contact_id!,
+      bodyText: cfg.text,
+      headerText: cfg.header_text,
+      footerText: cfg.footer_text,
+      buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
+    });
+    whatsapp_message_id = res.whatsapp_message_id;
+  } else {
+    // 4-10 buttons: adapt seamlessly into an Interactive List Menu (Meta allows up to 10 rows)
+    const res = await engineSendInteractiveList({
+      accountId: run.account_id,
+      userId: run.user_id,
+      conversationId: run.conversation_id!,
+      contactId: run.contact_id!,
+      bodyText: cfg.text,
+      buttonLabel: "Select Option",
+      headerText: cfg.header_text,
+      footerText: cfg.footer_text,
+      sections: [
+        {
+          title: "Options",
+          rows: cfg.buttons.map((b) => ({
+            id: b.reply_id,
+            title: b.title.slice(0, 24),
+          })),
+        },
+      ],
+    });
+    whatsapp_message_id = res.whatsapp_message_id;
+  }
   await logEvent(db, run.id, "message_sent", node.node_key, {
     node_type: "send_buttons",
     whatsapp_message_id,
@@ -1428,3 +1456,88 @@ async function startNewRun(
     outcome: outcome.outcome === "advanced" ? "started" : outcome.outcome,
   };
 }
+
+export interface TriggerFlowRunInput {
+  accountId: string;
+  flowId: string;
+  contactId: string;
+  conversationId: string;
+  userId?: string;
+  initialVars?: Record<string, unknown>;
+}
+
+/**
+ * Programmatically triggers an active conversational Flow from an Automation step or API.
+ */
+export async function triggerFlowRun(
+  input: TriggerFlowRunInput
+): Promise<{ success: boolean; flow_run_id?: string; outcome: string }> {
+  const db = supabaseAdmin();
+
+  // 1. Fetch flow
+  const { data: flow, error: flowErr } = await db
+    .from("flows")
+    .select("*")
+    .eq("id", input.flowId)
+    .eq("account_id", input.accountId)
+    .maybeSingle();
+
+  if (flowErr || !flow) {
+    throw new Error(`Flow not found: ${input.flowId}`);
+  }
+
+  // 2. Fetch all nodes for this flow
+  const { data: rawNodes, error: nodesErr } = await db
+    .from("flow_nodes")
+    .select("*")
+    .eq("flow_id", input.flowId);
+
+  if (nodesErr || !rawNodes || rawNodes.length === 0) {
+    throw new Error(`No nodes found for flow: ${input.flowId}`);
+  }
+
+  const nodes = new Map<string, FlowNodeRow>(
+    (rawNodes as FlowNodeRow[]).map((n) => [n.node_key, n])
+  );
+
+  // 3. Create active run
+  const { data: inserted, error: insErr } = await db
+    .from("flow_runs")
+    .insert({
+      flow_id: flow.id,
+      account_id: flow.account_id,
+      user_id: input.userId || flow.user_id,
+      contact_id: input.contactId,
+      conversation_id: input.conversationId,
+      status: "active",
+      current_node_key: flow.entry_node_id,
+      vars: input.initialVars || {},
+    })
+    .select("*")
+    .maybeSingle();
+
+  if (insErr || !inserted) {
+    const msg = insErr?.message || "";
+    if (msg.includes("23505") || msg.includes("duplicate key")) {
+      return { success: true, outcome: "already_running" };
+    }
+    throw new Error(`Failed to start flow run: ${msg}`);
+  }
+
+  const run = inserted as FlowRunRow;
+  await logEvent(db, run.id, "started", flow.entry_node_id, {
+    flow_id: flow.id,
+    trigger_type: "automation_step",
+  });
+
+  await db.rpc("increment_flow_execution_count", { p_flow_id: flow.id });
+
+  // 4. Advance from entry node
+  const outcome = await advanceFromNodeKey(db, run, flow.entry_node_id!, nodes);
+  return {
+    success: true,
+    flow_run_id: run.id,
+    outcome: outcome.outcome === "advanced" ? "started" : outcome.outcome,
+  };
+}
+

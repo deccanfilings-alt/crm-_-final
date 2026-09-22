@@ -1,78 +1,48 @@
-import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { NextResponse } from 'next/server'
+import { checkAndTriggerSlaBreaches } from '@/lib/automations/sla-monitor'
+import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: Request) {
-  // Verify Vercel cron secret if deployed
-  const authHeader = request.headers.get('authorization');
-  if (
-    process.env.CRON_SECRET &&
-    authHeader !== `Bearer ${process.env.CRON_SECRET}`
-  ) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
-    // 15 minutes ago
-    const slaThreshold = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const authHeader = request.headers.get('authorization')
+    const cronSecret = process.env.CRON_SECRET
 
-    const { data: overdueConversations, error: fetchError } = await supabaseAdmin()
-      .from('conversations')
-      .select('id, assigned_agent_id')
-      .eq('status', 'open')
-      .not('assigned_agent_id', 'is', null)
-      .lt('assigned_at', slaThreshold);
+    // Allow cron invocation via secret or authenticated user
+    let isAuthorized = false
 
-    if (fetchError) {
-      throw fetchError;
+    if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+      isAuthorized = true
+    } else {
+      const supabase = await createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (user) {
+        isAuthorized = true
+      }
     }
 
-    if (!overdueConversations || overdueConversations.length === 0) {
-      return NextResponse.json({ success: true, message: 'No overdue conversations.' });
+    if (!isAuthorized && process.env.NODE_ENV === 'production' && cronSecret) {
+      return NextResponse.json({ error: 'Unauthorized cron request' }, { status: 401 })
     }
 
-    const conversationIds = overdueConversations.map(c => c.id);
+    const url = new URL(request.url)
+    const accountId = url.searchParams.get('accountId') || undefined
 
-    // Unassign them
-    const { error: updateError } = await supabaseAdmin()
-      .from('conversations')
-      .update({
-        assigned_agent_id: null,
-        assigned_at: null,
-      })
-      .in('id', conversationIds);
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    // Insert an internal note for each unassigned conversation
-    const notesToInsert = overdueConversations.map(conv => ({
-      conversation_id: conv.id,
-      sender_type: 'bot',
-      content_type: 'text',
-      content_text: `[SLA BREACH] Conversation was automatically unassigned because the agent did not reply within 15 minutes. @all`,
-      is_internal: true,
-      status: 'sent',
-    }));
-
-    const { error: notesError } = await supabaseAdmin()
-      .from('messages')
-      .insert(notesToInsert);
-
-    if (notesError) {
-      console.error('Failed to insert SLA notes:', notesError);
-      // Don't fail the whole job if notes fail, since we successfully unassigned.
-    }
+    const stats = await checkAndTriggerSlaBreaches(accountId)
 
     return NextResponse.json({
       success: true,
-      unassigned_count: overdueConversations.length,
-    });
+      timestamp: new Date().toISOString(),
+      stats,
+    })
   } catch (error) {
-    console.error('SLA Monitor Cron Error:', error);
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
+    console.error('[cron/sla-monitor] Execution error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
+}
+
+export async function POST(request: Request) {
+  return GET(request)
 }
