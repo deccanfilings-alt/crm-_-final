@@ -643,3 +643,78 @@ export interface ChannelConnection {
   updated_at: string;
 }
 
+// ============================================================
+// Internal Team Chat
+// ============================================================
+
+export interface TeamRoom {
+  id: string;
+  account_id: string;
+  name: string;
+  description?: string | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  last_message?: {
+    content: string;
+    sender_name?: string;
+    created_at: string;
+  } | null;
+  unread_count?: number;
+}
+
+export interface TeamChatAttachment {
+  url: string;
+  name: string;
+  size?: number;
+  type?: string;
+}
+
+export interface TeamMessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+}
+
+export interface TeamMessageSender {
+  user_id: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  account_role?: string | null;
+  email?: string | null;
+}
+
+export interface TaggedContactInfo {
+  id: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+  conversation_id?: string | null;
+}
+
+export interface TeamMessage {
+  id: string;
+  room_id: string;
+  account_id: string;
+  sender_id: string;
+  content: string;
+  attachments?: TeamChatAttachment[];
+  mentioned_user_ids?: string[];
+  tagged_contact_ids?: string[];
+  reply_to_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  sender?: TeamMessageSender;
+  reactions?: TeamMessageReaction[];
+  reply_to?: {
+    id: string;
+    content: string;
+    sender_name?: string;
+  } | null;
+  tagged_contacts?: TaggedContactInfo[];
+}
+
+
