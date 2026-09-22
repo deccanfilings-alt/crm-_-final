@@ -993,6 +993,56 @@ export async function sendInteractiveList(
   return { messageId: data.messages[0].id }
 }
 
+export interface SendInteractiveLocationRequestArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  bodyText: string
+  contextMessageId?: string
+}
+
+/**
+ * Send an interactive location request message. WhatsApp renders a native
+ * "Send location" button which, when tapped by the customer, delivers their
+ * current GPS coordinates back to the CRM.
+ */
+export async function sendInteractiveLocationRequest(
+  args: SendInteractiveLocationRequestArgs
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, bodyText, contextMessageId } = args
+  validateInteractiveBody(bodyText)
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'location_request_message',
+      body: { text: bodyText },
+      action: {
+        name: 'send_location',
+      },
+    },
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
 function validateInteractiveBody(bodyText: string): void {
   if (!bodyText) throw new Error('Interactive message requires bodyText.')
   if (bodyText.length > INTERACTIVE_LIMITS.bodyMaxLength) {

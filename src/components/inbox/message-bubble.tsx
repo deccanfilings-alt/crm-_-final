@@ -16,6 +16,7 @@ import {
   CornerDownLeft,
   Download,
   Eye,
+  ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -586,13 +587,63 @@ function MessageContent({ message }: { message: Message }) {
         </div>
       );
 
-    case "location":
+    case "location": {
+      const rawText = message.content_text || "Location shared";
+      const coordMatch = rawText.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+      const lat = coordMatch ? coordMatch[1] : null;
+      const lng = coordMatch ? coordMatch[2] : null;
+      const mapUrl = lat && lng 
+        ? `https://www.google.com/maps?q=${lat},${lng}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawText)}`;
+
+      const cleanText = rawText.replace(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/, "").replace(/-\s*$/, "").trim();
+
       return (
-        <div className="flex items-center gap-2 text-sm">
-          <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>{message.content_text || "Location shared"}</span>
+        <div className={cn(
+          "flex flex-col gap-2.5 min-w-[220px] max-w-xs rounded-xl p-3 border shadow-sm transition-colors",
+          isAgent 
+            ? "bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground" 
+            : "bg-background/80 border-border text-foreground"
+        )}>
+          <div className="flex items-start gap-2.5">
+            <div className={cn(
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-sm",
+              isAgent ? "bg-primary-foreground/20 text-primary-foreground" : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+            )}>
+              <MapPin className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-xs font-semibold block truncate">
+                {cleanText || "Shared Location"}
+              </span>
+              {lat && lng ? (
+                <span className={cn("text-[11px] font-mono block truncate", isAgent ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                  {lat}, {lng}
+                </span>
+              ) : (
+                <span className={cn("text-[11px] block truncate", isAgent ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                  GPS Location Pin
+                </span>
+              )}
+            </div>
+          </div>
+          <a
+            href={mapUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "flex items-center justify-center gap-1.5 w-full py-1.5 px-3 rounded-lg text-xs font-medium transition-colors shadow-sm",
+              isAgent
+                ? "bg-primary-foreground text-primary hover:bg-primary-foreground/90"
+                : "bg-emerald-600 hover:bg-emerald-700 text-white"
+            )}
+          >
+            <span>Open in Google Maps</span>
+            <ExternalLink className="h-3 w-3" />
+          </a>
         </div>
       );
+    }
 
     case "interactive": {
       // Customer tapped a reply button or list row on a message the bot

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   sendInteractiveButtons,
   sendInteractiveList,
+  sendInteractiveLocationRequest,
 } from './meta-api';
 
 describe('Meta API - Interactive Messages', () => {
@@ -189,6 +190,45 @@ describe('Meta API - Interactive Messages', () => {
       expect(payload.interactive.type).toBe('list');
       expect(payload.interactive.action.sections).toHaveLength(2);
       expect(payload.interactive.action.button).toBe('Select Service');
+    });
+  });
+
+  describe('sendInteractiveLocationRequest', () => {
+    it('throws error when bodyText is empty', async () => {
+      await expect(
+        sendInteractiveLocationRequest({
+          phoneNumberId: '123456',
+          accessToken: 'token',
+          to: '919876543210',
+          bodyText: '',
+        })
+      ).rejects.toThrow('Interactive message requires bodyText.');
+    });
+
+    it('successfully sends location_request_message interactive payload', async () => {
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          messages: [{ id: 'wamid.HBgLMTIzNDU2TE9D' }],
+        }),
+      } as Response);
+
+      const result = await sendInteractiveLocationRequest({
+        phoneNumberId: '123456',
+        accessToken: 'valid-token',
+        to: '919876543210',
+        bodyText: 'Please share your delivery location with us.',
+      });
+
+      expect(result.messageId).toBe('wamid.HBgLMTIzNDU2TE9D');
+      const callArgs = vi.mocked(global.fetch).mock.calls[0];
+      const payload = JSON.parse(callArgs[1]?.body as string);
+
+      expect(payload.messaging_product).toBe('whatsapp');
+      expect(payload.type).toBe('interactive');
+      expect(payload.interactive.type).toBe('location_request_message');
+      expect(payload.interactive.body.text).toBe('Please share your delivery location with us.');
+      expect(payload.interactive.action.name).toBe('send_location');
     });
   });
 });

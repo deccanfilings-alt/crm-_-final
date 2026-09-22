@@ -19,6 +19,7 @@ import {
   X,
   Loader2,
   Sparkles,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -467,6 +468,34 @@ export function MessageComposer({
     setDraft((d) => (d ? { ...d, caption } : d));
   }, []);
 
+  const handleRequestLocation = useCallback(async () => {
+    if (busy || inputsDisabled) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          message_type: "interactive",
+          interactive_type: "location_request",
+          content_text: "Please share your current location with us.",
+          is_internal: isInternal,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to request location");
+      } else {
+        toast.success("Location request sent to customer");
+      }
+    } catch {
+      toast.error("Network error sending location request");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, inputsDisabled, conversationId, isInternal]);
+
   // ---- Render --------------------------------------------------------
 
   return (
@@ -544,31 +573,43 @@ export function MessageComposer({
           />
         </div>
       ) : recording ? (
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-2.5 m-3">
-          <span className="flex h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
-          <span className="flex-1 text-sm text-foreground">
-            Recording… {formatDuration(recordSeconds)} /{" "}
-            {formatDuration(MAX_RECORDING_SECONDS)}
-          </span>
+        <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 m-3 animate-in fade-in">
+          <span className="flex h-3 w-3 shrink-0 animate-ping rounded-full bg-red-500" />
+          <div className="flex-1 flex items-center gap-3 min-w-0">
+            <span className="text-xs font-semibold text-red-600 dark:text-red-400 shrink-0">
+              Recording Voice Note
+            </span>
+            <span className="text-xs font-mono text-muted-foreground shrink-0">
+              {formatDuration(recordSeconds)} / {formatDuration(MAX_RECORDING_SECONDS)}
+            </span>
+            {/* Visualizer audio wave bars */}
+            <div className="flex items-center gap-0.5 h-4">
+              <span className="w-1 bg-red-400 rounded-full animate-pulse h-2" />
+              <span className="w-1 bg-red-500 rounded-full animate-pulse h-4" />
+              <span className="w-1 bg-red-400 rounded-full animate-pulse h-3" />
+              <span className="w-1 bg-red-500 rounded-full animate-pulse h-2" />
+            </div>
+          </div>
           <button
             type="button"
             onClick={cancelRecording}
-            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground"
+            className="rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-card hover:text-foreground transition-colors"
           >
             Cancel
           </button>
           <Button
             size="sm"
             onClick={stopRecording}
-            className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90"
-            title="Stop and attach"
+            className="h-8 px-3 shrink-0 bg-red-500 hover:bg-red-600 text-white text-xs gap-1.5 shadow-sm"
+            title="Stop and attach voice note"
           >
-            <Square className="h-4 w-4" />
+            <Square className="h-3 w-3 fill-current" />
+            Done
           </Button>
         </div>
       ) : (
         <div className="flex flex-1 items-end gap-2 px-3 pb-3">
-          {/* Attach menu — photo / video / document / voice. */}
+          {/* Attach menu — photo / video / document / location / voice. */}
           <DropdownMenu>
             <DropdownMenuTrigger
               disabled={(!isInternal && sessionExpired) || busy || !canSend}
@@ -577,7 +618,7 @@ export function MessageComposer({
                   ? "Read-only — your role can't send messages"
                   : (!isInternal && sessionExpired)
                     ? "Session expired - use a template"
-                    : "Attach media"
+                    : "Attach media or actions"
               }
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -600,8 +641,12 @@ export function MessageComposer({
                 <FileText className="mr-2 h-4 w-4" />
                 Document
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleRequestLocation}>
+                <MapPin className="mr-2 h-4 w-4 text-emerald-500" />
+                Request Location
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => void startRecording()}>
-                <Mic className="mr-2 h-4 w-4" />
+                <Mic className="mr-2 h-4 w-4 text-red-500" />
                 Voice note
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -689,6 +734,18 @@ export function MessageComposer({
               )}
             />
           </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={(!isInternal && sessionExpired) || busy || !canSend}
+            onClick={() => void startRecording()}
+            title={!canSend ? "Read-only — your role can't send messages" : "Record voice note"}
+            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 transition-colors"
+          >
+            <Mic className="h-4 w-4" />
+          </Button>
 
           <GatedButton
             size="sm"

@@ -6,6 +6,7 @@ import {
   sendMediaMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendInteractiveLocationRequest,
   MetaApiError,
   type MediaKind,
   type InteractiveButton,
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
       sections,
       header_text,
       footer_text,
+      interactive_type,
     } = body
 
     if (!conversation_id || !message_type) {
@@ -101,9 +103,9 @@ export async function POST(request: Request) {
       )
     }
 
-    if (message_type === 'interactive' && (!buttons && !sections)) {
+    if (message_type === 'interactive' && (!buttons && !sections && interactive_type !== 'location_request')) {
       return NextResponse.json(
-        { error: 'Interactive messages require buttons (1-3) or sections (1-10 rows)' },
+        { error: 'Interactive messages require buttons (1-3), sections (1-10 rows), or interactive_type="location_request"' },
         { status: 400 }
       )
     }
@@ -381,6 +383,16 @@ export async function POST(request: Request) {
             return result.messageId
           }
           if (message_type === 'interactive') {
+            if (interactive_type === 'location_request') {
+              const result = await sendInteractiveLocationRequest({
+                phoneNumberId: config.phone_number_id,
+                accessToken,
+                to: phone,
+                bodyText: content_text || 'Please share your current location with us.',
+                contextMessageId,
+              })
+              return result.messageId
+            }
             if (buttons && Array.isArray(buttons) && buttons.length > 0) {
               const result = await sendInteractiveButtons({
                 phoneNumberId: config.phone_number_id,
