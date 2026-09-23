@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import OpenAI from 'openai'
-import { CohereClient } from 'cohere-ai'
-
 import mammoth from 'mammoth'
 
 // Simple text chunking function
@@ -201,14 +199,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
       if (embedProvider.type === 'cohere') {
         // Cohere embed-english-v3.0 → 1024 dimensions
-        const cohere = new CohereClient({ token: embedProvider.apiKey })
-        const embedResponse = await cohere.v2.embed({
-          texts: [chunk],
-          model: 'embed-english-v3.0',
-          inputType: 'search_document',
-          embeddingTypes: ['float'],
+        const res = await fetch('https://api.cohere.com/v2/embed', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${embedProvider.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            texts: [chunk],
+            model: 'embed-english-v3.0',
+            input_type: 'search_document',
+            embedding_types: ['float'],
+          }),
         })
-        const floats = embedResponse.embeddings?.float
+        if (!res.ok) throw new Error(`Cohere API error: ${res.status}`)
+        const data = await res.json()
+        const floats = data.embeddings?.float
         if (!floats || floats.length === 0) throw new Error('Empty embedding from Cohere')
         vector = floats[0]
       } else {
