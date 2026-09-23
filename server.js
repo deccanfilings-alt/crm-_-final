@@ -27,8 +27,8 @@ app.prepare().then(() => {
       console.error('[Hostinger] Server failed to start:', err);
       process.exit(1);
     })
-    .listen(port, hostname, () => {
-      console.log(`[Hostinger] Ready on http://${hostname}:${port}`);
+    .listen(port, () => {
+      console.log(`[Hostinger] Ready and listening on ${port}`);
     });
 }).catch((err) => {
   console.error('[Hostinger] Error during app.prepare():', err);

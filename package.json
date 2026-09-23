@@ -30,7 +30,7 @@
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=1024 && next dev",
     "build": "next build",
-    "start": "node server.js",
+    "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
