@@ -28,10 +28,11 @@ export interface SimulationStepTrace {
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ flowId: string }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { flowId } = await params
+    const { id } = await params
+    const flowId = id
     const supabase = await createClient()
     const {
       data: { user },
