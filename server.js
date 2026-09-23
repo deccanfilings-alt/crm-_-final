@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { createServer } = require('http');
-const { parse } = require('url');
 const next = require('next');
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -15,8 +14,7 @@ console.log(`[Hostinger] Initializing Next.js app in ${dev ? 'development' : 'pr
 app.prepare().then(() => {
   createServer(async (req, res) => {
     try {
-      const parsedUrl = parse(req.url, true);
-      await handle(req, res, parsedUrl);
+      await handle(req, res);
     } catch (err) {
       console.error('[Hostinger] Error handling request:', req.url, err);
       res.statusCode = 500;
