@@ -35,6 +35,19 @@ const MASKED_TOKEN = '••••••••••••••••';
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
+
+interface HealthMetrics {
+  configured: boolean;
+  healthy: boolean;
+  phoneStatus?: string;
+  qualityRating?: string;
+  messagingLimit?: string;
+  throughput?: { level?: string } | null;
+  pausedOrDisabledCount?: number;
+  pausedOrDisabledTemplates?: Array<{ name: string; language: string; status: string; qualityScore?: number }>;
+  error?: string;
+}
+
 export function WhatsAppConfig() {
   const supabase = createClient();
   // After multi-user, whatsapp_config is one-row-per-account, not
@@ -53,6 +66,7 @@ export function WhatsAppConfig() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
+  const [healthMetrics, setHealthMetrics] = useState<HealthMetrics | null>(null);
 
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
@@ -130,7 +144,18 @@ export function WhatsAppConfig() {
           const res = await fetch('/api/whatsapp/config', { method: 'GET' });
           const payload = await res.json();
 
-          if (payload.connected) {
+          
+            try {
+              const hRes = await fetch('/api/whatsapp/health');
+              if (hRes.ok) {
+                const hData = await hRes.json();
+                setHealthMetrics(hData);
+              }
+            } catch (err) {
+              console.error('Health endpoint query error:', err);
+            }
+
+            if (payload.connected) {
             setConnectionStatus('connected');
             setResetReason(null);
             setStatusMessage('');

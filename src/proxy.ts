@@ -75,10 +75,19 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // API routes that need auth (not webhooks)
-  if (!user && request.nextUrl.pathname.startsWith('/api/whatsapp/') &&
-      !request.nextUrl.pathname.includes('/webhook')) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Handle CORS preflight for agent endpoints (/api/mcp, /api/v1)
+  if (request.method === 'OPTIONS' && (
+    request.nextUrl.pathname.startsWith('/api/mcp') ||
+    request.nextUrl.pathname.startsWith('/api/v1')
+  )) {
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+      },
+    })
   }
 
   return supabaseResponse

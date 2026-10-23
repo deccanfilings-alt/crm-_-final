@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Contact, MessageTemplate } from '@/types';
+import { canonicalPhone, getPhoneLookupKeys, isUniqueViolation } from '@/lib/contacts/dedupe';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
 
@@ -226,57 +227,172 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       throw new Error('Your profile is not linked to an account.');
     }
 
-    // De-duplicate by phone within the CSV (users can paste duplicates).
-    const uniqueByPhone = new Map<string, { phone: string; name?: string }>();
+    // 1. De-duplicate and canonicalize CSV rows by canonical phone (e.g. 10 digits -> "91" + 10 digits).
+    // Keep first row's order, but preserve a name if a later row provides one.
+    const canonicalOrder: string[] = [];
+    const csvRowByCanonical = new Map<string, { phone: string; name?: string }>();
+
     for (const row of csvRows) {
-      if (row.phone) uniqueByPhone.set(row.phone, row);
-    }
-    const phones = [...uniqueByPhone.keys()];
-
-    // Single round-trip lookup of existing contacts by phone.
-    const { data: existing, error: lookupErr } = await supabase
-      .from('contacts')
-      .select('*')
-      .eq('user_id', user.id)
-      .in('phone', phones);
-    if (lookupErr) {
-      throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
-    }
-
-    const byPhone = new Map<string, Contact>();
-    for (const c of (existing ?? []) as Contact[]) {
-      if (c.phone) byPhone.set(c.phone, c);
+      const rawDigits = String(row.phone ?? '').replace(/\D/g, '');
+      if (!rawDigits) continue;
+      const canon = canonicalPhone(rawDigits);
+      if (!csvRowByCanonical.has(canon)) {
+        canonicalOrder.push(canon);
+        csvRowByCanonical.set(canon, {
+          phone: canon,
+          name: row.name?.trim() || undefined,
+        });
+      } else if (!csvRowByCanonical.get(canon)?.name && row.name?.trim()) {
+        const existing = csvRowByCanonical.get(canon)!;
+        existing.name = row.name.trim();
+      }
     }
 
-    // Insert only missing contacts, in one batch per 200 rows (PostgREST
-    // has a default payload cap — 200 keeps individual requests small).
-    const missing = phones
-      .filter((p) => !byPhone.has(p))
-      .map((phone) => ({
+    if (canonicalOrder.length === 0) return [];
+
+    // 2. Collect all candidate keys that could exist in contacts.phone_normalized
+    // (Postgres generates phone_normalized as regexp_replace(phone, '\D', '', 'g') without
+    // auto-prefixing 91, so existing numbers may be stored as 10 digits or 12 digits).
+    const lookupKeySet = new Set<string>();
+    for (const canon of canonicalOrder) {
+      lookupKeySet.add(canon);
+      for (const key of getPhoneLookupKeys(canon)) {
+        lookupKeySet.add(key);
+      }
+    }
+    const allLookupKeys = Array.from(lookupKeySet);
+
+    // 3. Look up existing contacts scoped to the entire account (account_id, NOT user_id),
+    // batching in chunks of 100 to avoid URL length limits.
+    const existingContacts: Contact[] = [];
+    const LOOKUP_CHUNK = 100;
+    for (let i = 0; i < allLookupKeys.length; i += LOOKUP_CHUNK) {
+      const chunk = allLookupKeys.slice(i, i + LOOKUP_CHUNK);
+      const { data, error: lookupErr } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('account_id', accountId)
+        .in('phone_normalized', chunk);
+
+      if (lookupErr) {
+        throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
+      }
+      if (data) {
+        existingContacts.push(...(data as Contact[]));
+      }
+    }
+
+    // 4. Index existing contacts by canonical phone, raw digits, and trunk variants
+    const contactByPhoneKey = new Map<string, Contact>();
+    for (const c of existingContacts) {
+      const digits = String(c.phone_normalized || c.phone || '').replace(/\D/g, '');
+      if (!digits) continue;
+      const canon = canonicalPhone(digits);
+      contactByPhoneKey.set(canon, c);
+      contactByPhoneKey.set(digits, c);
+      if (c.phone) if (c.phone) if (c.phone) contactByPhoneKey.set(c.phone, c);
+      if (c.phone_normalized) contactByPhoneKey.set(c.phone_normalized, c);
+      if (digits.length === 12 && digits.startsWith('91')) {
+        contactByPhoneKey.set(digits.slice(2), c);
+      }
+    }
+
+    // 5. Identify contacts genuinely missing from the account
+    const missing = canonicalOrder
+      .filter((canon) => !contactByPhoneKey.has(canon))
+      .map((canon) => ({
         user_id: user.id,
         account_id: accountId,
-        phone,
-        name: uniqueByPhone.get(phone)?.name ?? null,
+        phone: canon,
+        name: csvRowByCanonical.get(canon)?.name ?? null,
       }));
 
-    const INSERT_CHUNK = 200;
+    // 6. Batch insert missing contacts in chunks of 100, with fallback for 23505 race conditions
+    const INSERT_CHUNK = 100;
     for (let i = 0; i < missing.length; i += INSERT_CHUNK) {
       const chunk = missing.slice(i, i + INSERT_CHUNK);
       const { data: inserted, error: insertErr } = await supabase
         .from('contacts')
         .insert(chunk)
         .select();
+
       if (insertErr) {
-        throw new Error(`Failed to create CSV contacts: ${insertErr.message}`);
-      }
-      for (const c of (inserted ?? []) as Contact[]) {
-        if (c.phone) byPhone.set(c.phone, c);
+        // Fallback: insert row-by-row to catch unique violations or concurrent inserts gracefully
+        for (const row of chunk) {
+          const { data: singleInserted, error: singleErr } = await supabase
+            .from('contacts')
+            .insert(row)
+            .select()
+            .single();
+
+          if (!singleErr && singleInserted) {
+            const c = singleInserted as Contact;
+            contactByPhoneKey.set(row.phone, c);
+          } else if (
+            isUniqueViolation(singleErr) ||
+            (singleErr as any)?.code === '23505' ||
+            /unique constraint|duplicate key|already exists/i.test((singleErr as any)?.message || '') ||
+            /unique constraint|duplicate key|already exists/i.test((singleErr as any)?.details || '')
+          ) {
+            // Already in DB (e.g. concurrent insert or variant format) -> fetch it
+            const digits = String(row.phone).replace(/\D/g, '');
+            const candidateKeys = Array.from(new Set([digits, ...getPhoneLookupKeys(digits), canonicalPhone(digits)]));
+            let { data: found } = await supabase
+              .from('contacts')
+              .select('*')
+              .eq('account_id', accountId)
+              .in('phone_normalized', candidateKeys)
+              .limit(1)
+              .maybeSingle();
+
+            if (!found) {
+              const { data: foundByPhone } = await supabase
+                .from('contacts')
+                .select('*')
+                .eq('account_id', accountId)
+                .or(`phone.eq.${row.phone},phone.eq.+${digits},phone.eq.${digits}`)
+                .limit(1)
+                .maybeSingle();
+              found = foundByPhone;
+            }
+
+            if (!found && digits.length >= 8) {
+              const suffix = digits.slice(-10);
+              const { data: foundBySuffix } = await supabase
+                .from('contacts')
+                .select('*')
+                .eq('account_id', accountId)
+                .like('phone_normalized', `%${suffix}`)
+                .limit(1)
+                .maybeSingle();
+              found = foundBySuffix;
+            }
+
+            if (found) {
+              const c = found as Contact;
+              contactByPhoneKey.set(row.phone, c);
+              if (c.phone) contactByPhoneKey.set(c.phone, c);
+              if (c.phone_normalized) contactByPhoneKey.set(c.phone_normalized, c);
+            }
+          } else {
+            throw new Error(`Failed to create CSV contacts: ${singleErr?.message || insertErr.message}`);
+          }
+        }
+      } else {
+        for (const c of (inserted ?? []) as Contact[]) {
+          const digits = String(c.phone_normalized || c.phone || '').replace(/\D/g, '');
+          const canon = canonicalPhone(digits);
+          contactByPhoneKey.set(canon, c);
+          contactByPhoneKey.set(digits, c);
+          if (c.phone) if (c.phone) contactByPhoneKey.set(c.phone, c);
+          if (c.phone_normalized) contactByPhoneKey.set(c.phone_normalized, c);
+        }
       }
     }
 
-    // Preserve input order so analytics roughly matches the CSV order.
-    return phones
-      .map((p) => byPhone.get(p))
+    // 7. Preserve input order so recipient sequence matches the CSV order
+    return canonicalOrder
+      .map((canon) => contactByPhoneKey.get(canon))
       .filter((c): c is Contact => Boolean(c));
   }
 
@@ -410,151 +526,23 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         }
       }
 
-      // ── Step 4: Fetch recipients (joined contact) + preload custom values
-      setProgress(30);
-      const { data: recipients, error: recipientsFetchError } = await supabase
-        .from('broadcast_recipients')
-        .select('*, contact:contacts(*)')
-        .eq('broadcast_id', broadcast.id);
+      // ── Step 4: Trigger Server-Side Broadcast Engine ─────────────
+      // Hand the entire broadcast (all recipients) to the backend engine.
+      // The backend engine handles Meta rate limiting (WHATSAPP_SEND_RATE_PER_SEC),
+      // daily unique cap (WHATSAPP_DAILY_UNIQUE_CAP), and marketing cooldowns
+      // asynchronously under this single broadcast record.
+      setProgress(60);
+      const res = await fetch('/api/whatsapp/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          broadcastId: broadcast.id,
+        }),
+      });
 
-      if (recipientsFetchError || !recipients) {
-        throw new Error('Failed to fetch broadcast recipients');
-      }
-
-      // One bulk fetch of custom values for every contact in this
-      // broadcast, avoiding N+1 during the send loop.
-      const contactIds = recipients
-        .map((r) => r.contact?.id)
-        .filter((id): id is string => Boolean(id));
-      const customValueIndex = await fetchCustomValueIndex(
-        supabase,
-        contactIds,
-      );
-
-      let failedCount = 0;
-      const totalRecipients = recipients.length;
-      const successfulContactIds: string[] = [];
-
-      for (let i = 0; i < recipients.length; i += SEND_BATCH_SIZE) {
-        const batch = recipients.slice(i, i + SEND_BATCH_SIZE);
-
-        const apiRecipients = batch
-          .filter((r) => r.contact?.phone)
-          .map((r) => ({
-            phone: r.contact!.phone as string,
-            params: r.contact
-              ? resolveVariables(
-                  payload.variables,
-                  r.contact,
-                  customValueIndex.get(r.contact.id),
-                )
-              : [],
-          }));
-
-        if (apiRecipients.length === 0) continue;
-
-        try {
-          const res = await fetch('/api/whatsapp/broadcast', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              recipients: apiRecipients,
-              template_name: payload.template.name,
-              template_language: payload.template.language ?? 'en_US',
-            }),
-          });
-
-          const data = await res.json();
-
-          if (!res.ok) {
-            throw new Error(data.error || 'Broadcast API request failed');
-          }
-
-          const resultsByPhone = new Map<string, BroadcastApiResult>();
-          for (const r of (data.results ?? []) as BroadcastApiResult[]) {
-            resultsByPhone.set(r.phone, r);
-          }
-
-          for (const recipient of batch) {
-            const phone = recipient.contact?.phone;
-            const result = phone ? resultsByPhone.get(phone) : undefined;
-
-            if (!result) {
-              failedCount++;
-              await supabase
-                .from('broadcast_recipients')
-                .update({
-                  status: 'failed',
-                  error_message: 'No phone number on contact',
-                })
-                .eq('id', recipient.id);
-              continue;
-            }
-
-            if (result.status === 'sent') {
-              await supabase
-                .from('broadcast_recipients')
-                .update({
-                  status: 'sent',
-                  sent_at: new Date().toISOString(),
-                  whatsapp_message_id: result.whatsapp_message_id ?? null,
-                  error_message: null,
-                })
-                .eq('id', recipient.id);
-
-              if (recipient.contact?.id) {
-                successfulContactIds.push(recipient.contact.id);
-              }
-            } else {
-              failedCount++;
-              await supabase
-                .from('broadcast_recipients')
-                .update({
-                  status: 'failed',
-                  error_message: result.error ?? 'Unknown error',
-                })
-                .eq('id', recipient.id);
-            }
-          }
-        } catch (err) {
-          for (const recipient of batch) {
-            failedCount++;
-            await supabase
-              .from('broadcast_recipients')
-              .update({
-                status: 'failed',
-                error_message: err instanceof Error ? err.message : 'Unknown error',
-              })
-              .eq('id', recipient.id);
-          }
-        }
-
-        const progressPct =
-          30 + Math.round(((i + batch.length) / totalRecipients) * 60);
-        setProgress(progressPct);
-
-        if (i + SEND_BATCH_SIZE < recipients.length) {
-          await sleep(SEND_BATCH_DELAY_MS);
-        }
-      }
-
-      setProgress(95);
-      const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
-      await supabase
-        .from('broadcasts')
-        .update({ status: finalStatus })
-        .eq('id', broadcast.id);
-
-      // Track Attribution: Tag contacts with the campaign they just received
-      if (successfulContactIds.length > 0) {
-        // Chunk the updates if the list is huge, though Supabase handles large IN clauses well
-        for (let i = 0; i < successfulContactIds.length; i += 500) {
-          const chunk = successfulContactIds.slice(i, i + 500);
-          await supabase
-            .from('contacts')
-            .update({ last_broadcast_id: broadcast.id })
-            .in('id', chunk);
-        }
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to trigger broadcast processing');
       }
 
       setProgress(100);

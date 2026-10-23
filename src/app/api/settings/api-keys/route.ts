@@ -1,0 +1,137 @@
+import { NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
+import { generateApiKey } from '@/lib/auth/agent-auth';
+import { supabaseAdmin } from '@/lib/flows/admin-client';
+
+export async function GET() {
+  const supabase = await createClient();
+  const { data: userData, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !userData?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_id, account_role')
+    .eq('user_id', userData.user.id)
+    .single();
+
+  if (!profile?.account_id) {
+    return NextResponse.json({ error: 'No account found' }, { status: 404 });
+  }
+
+  if (profile.account_role !== 'admin' && profile.account_role !== 'owner') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  const { data: keys, error } = await supabaseAdmin()
+    .from('api_keys')
+    .select('id, name, key_prefix, scopes, is_active, last_used_at, expires_at, created_at')
+    .eq('account_id', profile.account_id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ api_keys: keys || [] });
+}
+
+export async function POST(req: Request) {
+  const supabase = await createClient();
+  const { data: userData, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !userData?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_id, account_role')
+    .eq('user_id', userData.user.id)
+    .single();
+
+  if (!profile?.account_id) {
+    return NextResponse.json({ error: 'No account found' }, { status: 404 });
+  }
+
+  if (profile.account_role !== 'admin' && profile.account_role !== 'owner') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  try {
+    const body = await req.json();
+    const { name, scopes, expiresInDays } = body;
+
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return NextResponse.json({ error: 'Key name is required' }, { status: 400 });
+    }
+
+    const created = await generateApiKey({
+      accountId: profile.account_id,
+      userId: userData.user.id,
+      name: name.trim(),
+      scopes: Array.isArray(scopes) && scopes.length > 0 ? scopes : ['all'],
+      expiresInDays: typeof expiresInDays === 'number' ? expiresInDays : undefined,
+    });
+
+    return NextResponse.json({
+      success: true,
+      apiKey: created,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to generate API key' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  const supabase = await createClient();
+  const { data: userData, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !userData?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_id, account_role')
+    .eq('user_id', userData.user.id)
+    .single();
+
+  if (!profile?.account_id) {
+    return NextResponse.json({ error: 'No account found' }, { status: 404 });
+  }
+
+  if (profile.account_role !== 'admin' && profile.account_role !== 'owner') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  try {
+    const { id } = await req.json();
+
+    if (!id) {
+      return NextResponse.json({ error: 'Key ID is required' }, { status: 400 });
+    }
+
+    const { error } = await supabaseAdmin()
+      .from('api_keys')
+      .delete()
+      .eq('id', id)
+      .eq('account_id', profile.account_id);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to delete API key' },
+      { status: 500 }
+    );
+  }
+}

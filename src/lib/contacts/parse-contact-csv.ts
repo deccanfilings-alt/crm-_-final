@@ -45,11 +45,14 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
   }
 
-  const headers = lines[0]
-    .split(',')
-    .map((h) => h.trim().toLowerCase().replace(/["']/g, ''));
+  const cleanHeader = (h: string) =>
+    h.trim().toLowerCase().replace(/["']/g, '').replace(/[\s_\-]+/g, '_');
+  const headers = lines[0].split(',').map(cleanHeader);
 
-  const phoneIdx = headers.indexOf('phone');
+  const phoneIdx = headers.findIndex((h) =>
+    ['phone', 'phone_number', 'phonenumber', 'mobile', 'mobile_number', 'contact_number', 'whatsapp'].includes(h) ||
+    h.includes('phone') || h.includes('mobile')
+  );
   if (phoneIdx === -1) {
     return { rows: [], hasTagsColumn: false, hasCompanyColumn: false };
   }

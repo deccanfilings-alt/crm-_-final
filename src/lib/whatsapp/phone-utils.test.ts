@@ -6,6 +6,7 @@ import {
   phoneVariants,
   phonesMatch,
   sanitizePhoneForMeta,
+  validateBroadcastPhone,
 } from "./phone-utils";
 
 describe("sanitizePhoneForMeta", () => {
@@ -160,5 +161,71 @@ describe("isRecipientNotAllowedError", () => {
       false,
     );
     expect(isRecipientNotAllowedError("")).toBe(false);
+  });
+});
+
+describe("validateBroadcastPhone", () => {
+  it("accepts valid 10-digit Indian numbers starting with 6, 7, 8, or 9", () => {
+    expect(validateBroadcastPhone("9876543210")).toEqual({
+      isValid: true,
+      sanitized: "9876543210",
+      isQuarantined: false,
+    });
+    expect(validateBroadcastPhone("8123456789")).toEqual({
+      isValid: true,
+      sanitized: "8123456789",
+      isQuarantined: false,
+    });
+    expect(validateBroadcastPhone("7000000000")).toEqual({
+      isValid: true,
+      sanitized: "7000000000",
+      isQuarantined: false,
+    });
+    expect(validateBroadcastPhone("6999999999")).toEqual({
+      isValid: true,
+      sanitized: "6999999999",
+      isQuarantined: false,
+    });
+  });
+
+  it("accepts valid 12-digit Indian numbers starting with 91 and keeps the last 10", () => {
+    expect(validateBroadcastPhone("919876543210")).toEqual({
+      isValid: true,
+      sanitized: "9876543210",
+      isQuarantined: false,
+    });
+    expect(validateBroadcastPhone("+91 98765 43210")).toEqual({
+      isValid: true,
+      sanitized: "9876543210",
+      isQuarantined: false,
+    });
+  });
+
+  it("quarantines the required four invalid rejection examples", () => {
+    // 1. 1234567890 (starts with 1)
+    const r1 = validateBroadcastPhone("1234567890");
+    expect(r1.isValid).toBe(false);
+    expect(r1.isQuarantined).toBe(true);
+
+    // 2. 0110012272 (starts with 0 / landline)
+    const r2 = validateBroadcastPhone("0110012272");
+    expect(r2.isValid).toBe(false);
+    expect(r2.isQuarantined).toBe(true);
+
+    // 3. 4035874045 (starts with 4)
+    const r3 = validateBroadcastPhone("4035874045");
+    expect(r3.isValid).toBe(false);
+    expect(r3.isQuarantined).toBe(true);
+
+    // 4. 1416300114 (starts with 1)
+    const r4 = validateBroadcastPhone("1416300114");
+    expect(r4.isValid).toBe(false);
+    expect(r4.isQuarantined).toBe(true);
+  });
+
+  it("quarantines numbers with invalid digit lengths or non-91 12-digit codes", () => {
+    expect(validateBroadcastPhone("12345").isQuarantined).toBe(true);
+    expect(validateBroadcastPhone("449876543210").isQuarantined).toBe(true); // 12 digits starting 44
+    expect(validateBroadcastPhone("").isQuarantined).toBe(true);
   });
 });

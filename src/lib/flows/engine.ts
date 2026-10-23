@@ -949,13 +949,37 @@ async function advanceFromNodeKey(
           finalMessages.push({ role: "user", content: customerQuery });
         }
 
-        const completion = await openai.chat.completions.create({
-          model: cfg.model,
-          messages: finalMessages,
-          temperature: cfg.temperature ?? 0.7,
-        });
+        let reply: string | undefined | null;
 
-        const reply = completion.choices[0]?.message?.content;
+        if (cfg.provider === "anthropic") {
+          const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": providerKey.api_key,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: cfg.model || "claude-3-5-sonnet-20241022",
+              max_tokens: 1024,
+              system: cfg.system_prompt + contextStr,
+              messages: chatHistory.length > 0 ? chatHistory : [{ role: "user", content: customerQuery }],
+            }),
+          });
+
+          const anthropicData = await anthropicRes.json();
+          if (anthropicData.error) throw new Error(anthropicData.error.message || "Anthropic error");
+          reply = anthropicData.content?.[0]?.text;
+        } else {
+          const completion = await openai.chat.completions.create({
+            model: cfg.model,
+            messages: finalMessages,
+            temperature: cfg.temperature ?? 0.7,
+          });
+
+          reply = completion.choices[0]?.message?.content;
+        }
+
         if (!reply) throw new Error("Empty response from LLM");
 
         const { whatsapp_message_id } = await engineSendText({

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import {
   dedupeByPhone,
+  getPhoneLookupKeys,
   isUniqueViolation,
   normalizeKey,
 } from '@/lib/contacts/dedupe';
@@ -226,20 +227,23 @@ export function ImportModal({
 
       // 2) Skip numbers already in this account. One read of the
       //    generated `phone_normalized` column (migration 022) → Set.
+      //    Index all lookup keys (both 10-digit and 12-digit variants) so that
+      //    existing numbers match regardless of leading country code "91".
       const { data: existingRows } = await supabase
         .from('contacts')
         .select('phone_normalized')
         .eq('account_id', accountId);
-      const existing = new Set(
-        (existingRows ?? [])
-          .map(
-            (r) => (r as { phone_normalized: string | null }).phone_normalized
-          )
-          .filter((p): p is string => !!p)
-      );
+      const existing = new Set<string>();
+      for (const r of (existingRows ?? []) as { phone_normalized: string | null }[]) {
+        if (!r.phone_normalized) continue;
+        for (const k of getPhoneLookupKeys(r.phone_normalized)) {
+          existing.add(k);
+        }
+      }
 
       const toInsert = unique.filter((row) => {
-        if (existing.has(normalizeKey(row.phone))) {
+        const keys = getPhoneLookupKeys(row.phone);
+        if (keys.some((k) => existing.has(k))) {
           skipped++;
           return false;
         }

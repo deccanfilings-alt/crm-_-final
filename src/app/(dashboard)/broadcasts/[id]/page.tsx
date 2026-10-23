@@ -33,6 +33,7 @@ import {
   ChevronDown,
   Trash2,
   DollarSign,
+  RotateCcw,
   Target,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -198,6 +199,40 @@ export default function BroadcastDetailPage() {
     fetchData();
   }, [broadcastId]);
 
+  // Poll for updates while broadcast is actively sending
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    if (broadcast?.status === "sending") {
+      interval = setInterval(async () => {
+        try {
+          const supabase = createClient();
+          const { data: bc } = await supabase
+            .from("broadcasts")
+            .select("*")
+            .eq("id", broadcastId)
+            .single();
+          if (bc) {
+            setBroadcast(bc);
+            if (bc.status !== "sending") {
+              // Final recipient reload when finished
+              const { data: recs } = await supabase
+                .from("broadcast_recipients")
+                .select("*, contact:contacts(*)")
+                .eq("broadcast_id", broadcastId)
+                .order("created_at", { ascending: false });
+              if (recs) setRecipients(recs);
+            }
+          }
+        } catch (e) {
+          console.error("Poll error:", e);
+        }
+      }, 3000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [broadcast?.status, broadcastId]);
+
   const filteredRecipients = useMemo(
     () =>
       statusFilter === 'all'
@@ -206,8 +241,37 @@ export default function BroadcastDetailPage() {
     [recipients, statusFilter],
   );
 
-  function handleExport() {
+  const countsByStatus = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: recipients.length,
+      sent: 0,
+      delivered: 0,
+      read: 0,
+      replied: 0,
+      failed: 0,
+      queued: 0,
+      pending: 0,
+      quarantined: 0,
+      deferred: 0,
+    };
+    for (const r of recipients) {
+      if (counts[r.status] !== undefined) counts[r.status]++;
+    }
+    return counts;
+  }, [recipients]);
+
+  function handleExport(targetStatus: RecipientStatus | 'all' = statusFilter) {
     if (!broadcast) return;
+    const targetList =
+      targetStatus === 'all'
+        ? recipients
+        : recipients.filter((r) => r.status === targetStatus);
+
+    if (targetList.length === 0) {
+      toast.info(`No contacts found with status: ${targetStatus === 'all' ? 'any' : targetStatus}`);
+      return;
+    }
+
     const header = [
       'Contact',
       'Phone',
@@ -218,7 +282,7 @@ export default function BroadcastDetailPage() {
       'Replied At',
       'Error',
     ];
-    const rows = recipients.map((r) => [
+    const rows = targetList.map((r) => [
       r.contact?.name ?? '',
       r.contact?.phone ?? '',
       r.status,
@@ -230,7 +294,9 @@ export default function BroadcastDetailPage() {
     ]);
     const csv = toCsv([header, ...rows]);
     const safeName = broadcast.name.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
-    downloadBlob(`broadcast-${safeName}-${broadcastId.slice(0, 8)}.csv`, csv);
+    const statusTag = targetStatus === 'all' ? 'all' : targetStatus;
+    downloadBlob(`broadcast-${safeName}-${statusTag}-${broadcastId.slice(0, 8)}.csv`, csv);
+    toast.success(`Exported ${targetList.length} ${statusTag === 'all' ? 'recipients' : `${statusTag} contacts`}`);
   }
 
   async function handleDelete() {
@@ -482,16 +548,73 @@ export default function BroadcastDetailPage() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={recipients.length === 0}
-              className="border-border text-muted-foreground hover:bg-muted"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Export CSV
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={recipients.length === 0}
+                    className="border-border text-muted-foreground hover:bg-muted gap-1.5"
+                  />
+                }
+              >
+                <Download className="h-3.5 w-3.5 text-primary" />
+                {statusFilter === "all" ? "Export CSV" : `Export ${getRecipientStatus(statusFilter).label} (${filteredRecipients.length})`}
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 border-border bg-popover">
+                <DropdownMenuItem
+                  onClick={() => handleExport(statusFilter)}
+                  className="font-medium text-primary cursor-pointer"
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" />
+                  Current View ({filteredRecipients.length})
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExport("all")}
+                  className="cursor-pointer"
+                >
+                  All Recipients ({recipients.length})
+                </DropdownMenuItem>
+                <div className="my-1 border-t border-border/60" />
+                <DropdownMenuItem
+                  onClick={() => handleExport("failed")}
+                  disabled={!countsByStatus.failed}
+                  className="text-red-400 cursor-pointer disabled:opacity-40"
+                >
+                  Failed Only ({countsByStatus.failed || 0})
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExport("sent")}
+                  disabled={!countsByStatus.sent}
+                  className="cursor-pointer disabled:opacity-40"
+                >
+                  Sent Only ({countsByStatus.sent || 0})
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExport("delivered")}
+                  disabled={!countsByStatus.delivered}
+                  className="text-teal-400 cursor-pointer disabled:opacity-40"
+                >
+                  Delivered Only ({countsByStatus.delivered || 0})
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExport("read")}
+                  disabled={!countsByStatus.read}
+                  className="text-blue-400 cursor-pointer disabled:opacity-40"
+                >
+                  Read Only ({countsByStatus.read || 0})
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExport("replied")}
+                  disabled={!countsByStatus.replied}
+                  className="text-indigo-400 cursor-pointer disabled:opacity-40"
+                >
+                  Replied Only ({countsByStatus.replied || 0})
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 

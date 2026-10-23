@@ -118,7 +118,7 @@ export interface AIIntentBranch {
 
 export interface AIIntentNodeConfig {
   /** AI Provider (same as ai_reply) */
-  provider: "openai" | "openrouter" | "sarvam" | "cohere";
+  provider: "openai" | "openrouter" | "sarvam" | "cohere" | "anthropic";
   /** Exact model name (e.g., gpt-4o-mini) */
   model: string;
   /** Overall context or prompt for the classifier */
@@ -218,8 +218,8 @@ export interface SetTagNodeConfig {
 export type EndNodeConfig = Record<string, never>;
 
 export interface AIReplyNodeConfig {
-  /** The provider to use (e.g. openai, openrouter). */
-  provider: "openai" | "openrouter";
+  /** The provider to use (e.g. openai, openrouter, anthropic). */
+  provider: "openai" | "openrouter" | "anthropic";
   /** The system prompt to instruct the LLM. */
   system_prompt: string;
   /** The model to use (e.g. gpt-4o, claude-3.5-sonnet). */

@@ -70,7 +70,7 @@ export async function POST(req: Request) {
   try {
     const { provider, api_key, is_active } = await req.json();
 
-    if (!provider || !['openai', 'openrouter', 'sarvam', 'cohere'].includes(provider)) {
+    if (!provider || !['openai', 'openrouter', 'sarvam', 'cohere', 'anthropic'].includes(provider)) {
       return NextResponse.json({ error: 'Invalid provider' }, { status: 400 });
     }
 

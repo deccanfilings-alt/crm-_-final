@@ -63,6 +63,14 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
+    // Suppress the Turbopack CSS worker crash caused by @xyflow/react’s
+    // stylesheet in Next.js 16. The worker exits with status 0 when
+    // processing certain vendor CSS structures — ignoring the issue at
+    // the source prevents the dev-server from restarting in a loop.
+    // See: https://github.com/vercel/next.js/issues (Turbopack CSS / worker exit)
+    ignoreIssue: [
+      { path: "**/node_modules/@xyflow/react/**" },
+    ],
   },
   compress: false, // Fix for Hostinger/LiteSpeed corrupting Next.js chunked streaming responses
   allowedDevOrigins: ["*.ngrok-free.dev"],

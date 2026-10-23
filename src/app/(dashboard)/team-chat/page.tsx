@@ -7,11 +7,44 @@ import { TeamChannelList, type TeammateMember } from "@/components/team-chat/tea
 import { TeamMessageBubble } from "@/components/team-chat/team-message-bubble"
 import { TeamMessageComposer } from "@/components/team-chat/team-message-composer"
 import { ContactPreviewModal } from "@/components/team-chat/contact-preview-modal"
+import { ConvertToTaskModal } from "@/components/team-chat/convert-to-task-modal"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Hash, Users, MessageSquare, Shield, Crown, UserCog, UserCheck, MessageSquarePlus } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import {
+  Hash,
+  Users,
+  MessageSquare,
+  Shield,
+  Crown,
+  UserCog,
+  MessageSquarePlus,
+  Search,
+  X,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import type { TeamRoom, TeamMessage, TaggedContactInfo } from "@/types"
+import type { TeamRoom, TeamMessage, TaggedContactInfo, TeamChatAttachment } from "@/types"
+
+function playNotificationChime() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = "sine"
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime) // D5
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.08) // A5
+    gain.gain.setValueAtTime(0.12, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + 0.35)
+  } catch {
+    // Ignore audio restrictions
+  }
+}
 
 export default function TeamChatPage() {
   const { user, profile, accountRole } = useAuth()
@@ -24,8 +57,32 @@ export default function TeamChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [selectedContact, setSelectedContact] = useState<TaggedContactInfo | null>(null)
   const [contactModalOpen, setContactModalOpen] = useState(false)
+  const [taskModalOpen, setTaskModalOpen] = useState(false)
+  const [taskMessage, setTaskMessage] = useState<TeamMessage | null>(null)
+
+  // Presence and typing
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set())
+  const [typingUsers, setTypingUsers] = useState<{ id: string; name: string }[]>([])
+  const typingTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({})
+  const activeRoomChannelRef = useRef<any>(null)
+  const lastTypingSentRef = useRef(0)
+
+  // In-chat search and quote reply
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [replyToMessage, setReplyToMessage] = useState<TeamMessage | null>(null)
+
+  // Per-room unread badge counts
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({})
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Request browser notification permissions on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {})
+    }
+  }, [])
 
   // Combined list of rooms (channels + DMs)
   const allRooms = useMemo(() => {
@@ -36,10 +93,31 @@ export default function TeamChatPage() {
     return allRooms.find((r) => r.id === activeRoomId) || null
   }, [allRooms, activeRoomId])
 
-  // Auto-scroll to bottom on new messages
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
+  // Filter messages based on in-chat search
+  const visibleMessages = useMemo(() => {
+    if (!searchQuery.trim()) return messages
+    const q = searchQuery.toLowerCase()
+    return messages.filter(
+      (m) =>
+        m.content?.toLowerCase().includes(q) ||
+        m.sender?.full_name?.toLowerCase().includes(q)
+    )
+  }, [messages, searchQuery])
+
+  // Scroll to bottom
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior })
+  }, [])
+
+  const prevMsgCountRef = useRef(0)
+  useEffect(() => {
+    if (messages.length > prevMsgCountRef.current) {
+      requestAnimationFrame(() =>
+        scrollToBottom(prevMsgCountRef.current === 0 ? "auto" : "smooth")
+      )
+    }
+    prevMsgCountRef.current = messages.length
+  }, [messages.length, scrollToBottom])
 
   // Load rooms, DMs, and teammates
   const loadRooms = useCallback(async () => {
@@ -81,7 +159,6 @@ export default function TeamChatPage() {
       if (res.ok) {
         const data = await res.json()
         setMessages(data.messages || [])
-        setTimeout(scrollToBottom, 50)
       }
     } catch (err) {
       console.error("[team-chat] Failed to fetch messages:", err)
@@ -94,12 +171,47 @@ export default function TeamChatPage() {
   useEffect(() => {
     if (activeRoomId) {
       loadMessages(activeRoomId)
+      setReplyToMessage(null)
+      setSearchQuery("")
     } else {
       setMessages([])
     }
   }, [activeRoomId, loadMessages])
 
-  // Realtime subscription for incoming team messages, reactions, and deletions
+  // Global Realtime Presence (Tracks who is currently online in real-time)
+  useEffect(() => {
+    if (!user) return
+    const supabase = createClient()
+    const presenceChannel = supabase.channel("team-presence-global", {
+      config: { presence: { key: user.id } },
+    })
+
+    presenceChannel
+      .on("presence", { event: "sync" }, () => {
+        const state = presenceChannel.presenceState()
+        const ids = new Set<string>()
+        Object.values(state).forEach((presences: any) => {
+          presences.forEach((p: any) => {
+            if (p.user_id) ids.add(p.user_id)
+          })
+        })
+        setOnlineUserIds(ids)
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await presenceChannel.track({
+            user_id: user.id,
+            online_at: new Date().toISOString(),
+          })
+        }
+      })
+
+    return () => {
+      supabase.removeChannel(presenceChannel)
+    }
+  }, [user])
+
+  // Realtime subscription for active room (Typing Broadcasts, Messages, Reactions, Updates)
   useEffect(() => {
     if (!activeRoomId) return
 
@@ -108,6 +220,20 @@ export default function TeamChatPage() {
 
     const channel = supabase
       .channel(channelName)
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (payload && payload.userId !== user?.id && payload.roomId === activeRoomId) {
+          setTypingUsers((prev) => {
+            const next = prev.filter((u) => u.id !== payload.userId)
+            return [...next, { id: payload.userId, name: payload.userName || "Teammate" }]
+          })
+          if (typingTimeoutsRef.current[payload.userId]) {
+            clearTimeout(typingTimeoutsRef.current[payload.userId])
+          }
+          typingTimeoutsRef.current[payload.userId] = setTimeout(() => {
+            setTypingUsers((prev) => prev.filter((u) => u.id !== payload.userId))
+          }, 3000)
+        }
+      })
       .on(
         "postgres_changes",
         {
@@ -119,29 +245,33 @@ export default function TeamChatPage() {
         async (payload) => {
           const newMsg = payload.new as any
 
-          // Notify if mentioned
-          if (
-            user &&
-            newMsg.sender_id !== user.id &&
-            Array.isArray(newMsg.mentioned_user_ids) &&
-            newMsg.mentioned_user_ids.includes(user.id)
-          ) {
+          // Sound chime & notification for messages from other users
+          if (user && newMsg.sender_id !== user.id) {
+            playNotificationChime()
+
             const roomLabel = activeRoom?.is_direct
               ? activeRoom.dm_partner?.full_name || "Direct Message"
               : `#${activeRoom?.name || "chat"}`
 
-            toast.message(`Mentioned in ${roomLabel}`, {
-              description: newMsg.content,
-            })
-
-            if ("Notification" in window && Notification.permission === "granted") {
-              new Notification(`New Mention in ${roomLabel}`, {
+            if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+              new Notification(`New message in ${roomLabel}`, {
                 body: newMsg.content,
               })
             }
           }
 
-          // Refetch to hydrate sender details and reactions
+          loadMessages(activeRoomId)
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "team_messages",
+          filter: `room_id=eq.${activeRoomId}`,
+        },
+        () => {
           loadMessages(activeRoomId)
         }
       )
@@ -173,10 +303,77 @@ export default function TeamChatPage() {
       )
       .subscribe()
 
+    activeRoomChannelRef.current = channel
+
     return () => {
       supabase.removeChannel(channel)
+      activeRoomChannelRef.current = null
+      setTypingUsers([])
     }
   }, [activeRoomId, activeRoom, user, loadMessages])
+
+  // Global realtime: badge unread counts and bubble rooms to top
+  useEffect(() => {
+    if (!user) return
+    const supabase = createClient()
+    const ch = supabase
+      .channel(`realtime:unread:${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "team_messages" },
+        (payload) => {
+          const msg = payload.new as any
+          if (msg.room_id && msg.room_id !== activeRoomId && msg.sender_id !== user.id) {
+            playNotificationChime()
+            setUnreadCounts((prev) => ({ ...prev, [msg.room_id]: (prev[msg.room_id] || 0) + 1 }))
+
+            // Bubble the room to the top
+            setRooms((prev) => {
+              const idx = prev.findIndex((r) => r.id === msg.room_id)
+              if (idx > 0) {
+                const u = [...prev]
+                const [r] = u.splice(idx, 1)
+                return [r, ...u]
+              }
+              return prev
+            })
+            setDirectMessages((prev) => {
+              const idx = prev.findIndex((r) => r.id === msg.room_id)
+              if (idx > 0) {
+                const u = [...prev]
+                const [r] = u.splice(idx, 1)
+                return [r, ...u]
+              }
+              return prev
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(ch)
+    }
+  }, [activeRoomId, user])
+
+  // Throttled typing signal sender
+  const handleSendTyping = useCallback(() => {
+    const now = Date.now()
+    if (now - lastTypingSentRef.current < 2000) return
+    lastTypingSentRef.current = now
+
+    if (activeRoomChannelRef.current && user && activeRoomId) {
+      activeRoomChannelRef.current.send({
+        type: "broadcast",
+        event: "typing",
+        payload: {
+          userId: user.id,
+          userName: profile?.full_name || user.email?.split("@")[0] || "Teammate",
+          roomId: activeRoomId,
+        },
+      })
+    }
+  }, [user, profile, activeRoomId])
 
   // Handle starting a 1-on-1 direct message
   const handleStartDM = async (targetUserId: string) => {
@@ -213,7 +410,8 @@ export default function TeamChatPage() {
     content: string,
     taggedContactIds: string[],
     mentionedUserIds: string[],
-    attachments?: any[]
+    attachments?: TeamChatAttachment[],
+    replyToId?: string | null
   ) => {
     if (!activeRoomId) return
 
@@ -226,6 +424,7 @@ export default function TeamChatPage() {
           tagged_contact_ids: taggedContactIds,
           mentioned_user_ids: mentionedUserIds,
           attachments: attachments || [],
+          reply_to_id: replyToId || null,
         }),
       })
 
@@ -237,10 +436,39 @@ export default function TeamChatPage() {
       const data = await res.json()
       if (data.message) {
         setMessages((prev) => [...prev, data.message])
-        setTimeout(scrollToBottom, 50)
       }
+      setReplyToMessage(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send message")
+      throw err
+    }
+  }
+
+  // Handle editing a message
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    if (!activeRoomId) return
+    try {
+      const res = await fetch(`/api/team-chat/rooms/${activeRoomId}/messages`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId, content: newContent }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || "Failed to edit message")
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, content: newContent, updated_at: new Date().toISOString() }
+            : m
+        )
+      )
+      toast.success("Message edited")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to edit message")
       throw err
     }
   }
@@ -250,7 +478,6 @@ export default function TeamChatPage() {
     if (!activeRoomId) return
 
     const previousMessages = [...messages]
-    // Optimistic UI update
     setMessages((prev) => prev.filter((m) => m.id !== messageId))
 
     try {
@@ -268,7 +495,6 @@ export default function TeamChatPage() {
 
       toast.success("Message deleted")
     } catch (err) {
-      // Revert on error
       setMessages(previousMessages)
       toast.error(err instanceof Error ? err.message : "Failed to delete message")
     }
@@ -297,6 +523,18 @@ export default function TeamChatPage() {
     setContactModalOpen(true)
   }
 
+  // Jump and highlight specific message (for quotes)
+  const handleJumpToMessage = (messageId: string) => {
+    const el = document.getElementById(`message-${messageId}`)
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" })
+      el.classList.add("bg-primary/20")
+      setTimeout(() => el.classList.remove("bg-primary/20"), 2000)
+    } else {
+      toast.info("Original message is further up in chat history")
+    }
+  }
+
   const isDm = Boolean(activeRoom?.is_direct)
   const partner = activeRoom?.dm_partner
   const partnerName = partner?.full_name || "Teammate"
@@ -306,7 +544,11 @@ export default function TeamChatPage() {
     .join("")
     .slice(0, 2)
     .toUpperCase()
-  const isPartnerOnline = partner?.agent_status === "online"
+
+  const isPartnerOnline = Boolean(
+    (partner?.user_id && onlineUserIds.has(partner.user_id)) ||
+    partner?.agent_status === "online"
+  )
   const isPartnerBusy = partner?.agent_status === "busy"
 
   return (
@@ -317,7 +559,14 @@ export default function TeamChatPage() {
         directMessages={directMessages}
         teammates={teammates}
         activeRoomId={activeRoomId}
-        onSelectRoom={setActiveRoomId}
+        onSelectRoom={(roomId) => {
+          setActiveRoomId(roomId)
+          setUnreadCounts((prev) => {
+            const n = { ...prev }
+            delete n[roomId]
+            return n
+          })
+        }}
         onRoomCreated={(newRoom) => {
           if (newRoom.is_direct) {
             setDirectMessages((prev) => [newRoom, ...prev])
@@ -327,7 +576,9 @@ export default function TeamChatPage() {
         }}
         onStartDM={handleStartDM}
         userRole={accountRole || undefined}
+        unreadCounts={unreadCounts}
         loading={loadingRooms}
+        onlineUserIds={onlineUserIds}
       />
 
       {/* Main Chat Area */}
@@ -406,7 +657,52 @@ export default function TeamChatPage() {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+              {/* Header Right Actions: In-Chat Search & Badges */}
+              <div className="flex items-center gap-2 shrink-0">
+                {searchOpen ? (
+                  <div className="relative flex items-center">
+                    <Search className="absolute left-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search this chat..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-8 w-48 pl-8 pr-7 text-xs bg-muted/40 rounded-lg"
+                      autoFocus
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-2 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSearchOpen(true)}
+                    className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                    title="Search messages in this channel"
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                )}
+
+                {searchOpen && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchOpen(false)
+                      setSearchQuery("")
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Close
+                  </button>
+                )}
+
                 {isDm ? (
                   <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 border border-primary/20 px-2 py-1 text-[11px] text-primary font-medium">
                     <MessageSquarePlus className="h-3.5 w-3.5" />
@@ -427,9 +723,19 @@ export default function TeamChatPage() {
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                   Loading message history...
                 </div>
-              ) : messages.length === 0 ? (
+              ) : visibleMessages.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center p-8 text-center text-muted-foreground">
-                  {isDm ? (
+                  {searchQuery ? (
+                    <>
+                      <Search className="h-10 w-10 text-muted-foreground/40 mb-2" />
+                      <h3 className="font-semibold text-sm text-foreground">
+                        No messages found
+                      </h3>
+                      <p className="text-xs text-muted-foreground max-w-sm mt-1">
+                        No messages in this chat matched &quot;{searchQuery}&quot;.
+                      </p>
+                    </>
+                  ) : isDm ? (
                     <>
                       <Avatar className="h-16 w-16 mb-3 border-2 border-primary/20">
                         <AvatarImage src={partner?.avatar_url || undefined} />
@@ -459,7 +765,7 @@ export default function TeamChatPage() {
                   )}
                 </div>
               ) : (
-                messages.map((msg) => (
+                visibleMessages.map((msg) => (
                   <TeamMessageBubble
                     key={msg.id}
                     message={msg}
@@ -468,15 +774,48 @@ export default function TeamChatPage() {
                     onToggleReaction={handleToggleReaction}
                     onSelectContact={handleSelectContact}
                     onDeleteMessage={handleDeleteMessage}
+                    onReplyMessage={(m) => setReplyToMessage(m)}
+                    onEditMessage={handleEditMessage}
+                    onJumpToMessage={handleJumpToMessage}
+                    onConvertToTask={(m) => {
+                      setTaskMessage(m)
+                      setTaskModalOpen(true)
+                    }}
                   />
                 ))
               )}
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Live Typing Indicator */}
+            {typingUsers.length > 0 && (
+              <div className="flex items-center gap-2 px-6 py-1 text-xs text-muted-foreground bg-muted/20 border-t border-border/40">
+                <span className="flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" />
+                </span>
+                <span className="font-medium">
+                  {typingUsers.map((u) => u.name).join(", ")}{" "}
+                  {typingUsers.length === 1 ? "is" : "are"} typing...
+                </span>
+              </div>
+            )}
+
             {/* Message Composer */}
             <TeamMessageComposer
               onSendMessage={handleSendMessage}
+              onTyping={handleSendTyping}
+              replyTo={
+                replyToMessage
+                  ? {
+                      id: replyToMessage.id,
+                      content: replyToMessage.content,
+                      sender_name: replyToMessage.sender?.full_name || "Teammate",
+                    }
+                  : null
+              }
+              onCancelReply={() => setReplyToMessage(null)}
               placeholder={
                 isDm
                   ? `Message ${partnerName}... (Type @ to tag CRM contacts)`
@@ -501,6 +840,15 @@ export default function TeamChatPage() {
         open={contactModalOpen}
         onOpenChange={setContactModalOpen}
       />
-    </div>
+    
+      {/* Convert Message to CRM Task Modal */}
+      <ConvertToTaskModal
+        message={taskMessage}
+        open={taskModalOpen}
+        onOpenChange={setTaskModalOpen}
+        teammates={teammates}
+        currentUserId={user?.id}
+      />
+</div>
   )
 }

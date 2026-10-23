@@ -4,6 +4,7 @@ import OpenAI, { toFile } from 'openai'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { classifyMetaError } from '@/lib/whatsapp/classifier'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
@@ -423,6 +424,20 @@ async function handleStatusUpdate(status: {
   if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
   if (status.status === 'delivered') update.delivered_at = tsIso
   if (status.status === 'read') update.read_at = tsIso
+
+  if (status.status === 'failed') {
+    update.raw_webhook_payload = status
+    if (status.errors && status.errors.length > 0) {
+      const err = status.errors[0]
+      update.error_code = err.code
+      update.error_message = err.title || err.message || 'Delivery failed'
+      update.error_details = err.error_data?.details || null
+      update.error_href = err.href || null
+
+      const classified = classifyMetaError(err)
+      update.disposition = classified.disposition
+    }
+  }
 
   const { error: recUpdateErr } = await supabaseAdmin()
     .from('broadcast_recipients')

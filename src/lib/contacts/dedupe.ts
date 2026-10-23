@@ -18,6 +18,37 @@ export function normalizeKey(phone: string): string {
   return normalizePhone(phone);
 }
 
+/**
+ * Canonical phone key for deduplication and broadcast audience lookup.
+ * Prefixes 10-digit Indian numbers with "91" so that "7995544799" and
+ * "917995544799" map to the same canonical key ("917995544799").
+ */
+export function canonicalPhone(phone: string): string {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  if (digits.length === 10) {
+    return '91' + digits;
+  }
+  return digits;
+}
+
+/**
+ * Returns all possible representations of this phone number that might be stored
+ * in `contacts.phone_normalized` (which Postgres generates as `regexp_replace(phone, '\D', '', 'g')`).
+ * Since existing contacts may have been stored with 10 digits or 12 digits (with 91 country code),
+ * this returns both representations for lookup.
+ */
+export function getPhoneLookupKeys(phone: string): string[] {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  if (!digits) return [];
+  if (digits.length === 10) {
+    return [digits, '91' + digits];
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return [digits, digits.slice(2)];
+  }
+  return [digits];
+}
+
 /** Minimal shape we need back from a contacts lookup. */
 export interface ExistingContact {
   id: string;
@@ -114,10 +145,25 @@ export function isExactMatch(existing: ExistingContact, phone: string): boolean 
  * True for a Postgres unique-constraint violation (SQLSTATE 23505).
  * Used as the backstop when the DB unique index rejects a racing or
  * format-equal insert that slipped past the in-app check.
+ * Checks SQLSTATE code as well as message/details for PostgREST/proxy compatibility.
  */
 export function isUniqueViolation(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
-  return (error as { code?: string }).code === "23505";
+  const err = error as { code?: string | number; message?: string; details?: string };
+  if (String(err.code) === "23505") return true;
+  if (
+    typeof err.message === "string" &&
+    (/unique constraint|duplicate key|idx_contacts/i.test(err.message) || err.message.includes("23505"))
+  ) {
+    return true;
+  }
+  if (
+    typeof err.details === "string" &&
+    (/already exists/i.test(err.details) || err.details.includes("23505"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -134,7 +180,7 @@ export function dedupeByPhone<T extends { phone: string }>(
   let duplicates = 0;
 
   for (const row of rows) {
-    const key = normalizeKey(row.phone);
+    const key = canonicalPhone(row.phone);
     if (!key) {
       duplicates++;
       continue;

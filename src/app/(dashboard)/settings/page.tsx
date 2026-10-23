@@ -17,6 +17,7 @@ import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel'
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { AiProvidersPanel } from '@/components/settings/ai-providers-panel';
+import { ApiKeysPanel } from '@/components/settings/api-keys-panel';
 import { CannedResponsesPanel } from '@/components/settings/canned-responses-panel';
 import { BackupPanel } from '@/components/settings/backup-panel';
 import {
@@ -65,6 +66,7 @@ export default function SettingsPage() {
     deals: <DealsSettings />,
     members: <MembersTab />,
     ai: <AiProvidersPanel />,
+    'api-keys': <ApiKeysPanel />,
     canned: <CannedResponsesPanel />,
     backups: <BackupPanel />,
   };

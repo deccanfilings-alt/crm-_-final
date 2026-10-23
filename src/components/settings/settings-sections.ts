@@ -12,6 +12,7 @@ import {
   Sparkles,
   MessageSquareDashed,
   Share2,
+  Bot,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -35,6 +36,7 @@ export const SETTINGS_SECTIONS = [
   'deals',
   'members',
   'ai',
+  'api-keys',
   'canned',
   'backups',
 ] as const;
@@ -63,6 +65,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
   ai: { id: 'ai', label: 'AI Providers', icon: Sparkles, group: 'workspace' },
+  'api-keys': { id: 'api-keys', label: 'Agent Connectors & API', icon: Bot, group: 'workspace' },
   canned: { id: 'canned', label: 'Canned Responses', icon: MessageSquareDashed, group: 'workspace' },
   backups: { id: 'backups', label: 'Data & Backups', icon: Database, group: 'workspace' },
 };

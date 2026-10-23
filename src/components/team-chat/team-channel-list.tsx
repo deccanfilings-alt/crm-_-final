@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import React, { useState } from "react"
 import { cn } from "@/lib/utils"
@@ -41,6 +41,8 @@ interface TeamChannelListProps {
   onStartDM?: (targetUserId: string) => Promise<void>
   userRole?: string
   loading?: boolean
+  unreadCounts?: Record<string, number>
+  onlineUserIds?: Set<string>
 }
 
 export function TeamChannelList({
@@ -53,6 +55,8 @@ export function TeamChannelList({
   onStartDM,
   userRole = "agent",
   loading = false,
+  unreadCounts = {},
+  onlineUserIds,
 }: TeamChannelListProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [createChannelOpen, setCreateChannelOpen] = useState(false)
@@ -229,11 +233,11 @@ export function TeamChannelList({
                       />
                       <span className="truncate">{room.name}</span>
                     </div>
-                    {room.last_message && !isActive && (
-                      <span className="text-[10px] text-muted-foreground shrink-0 opacity-70">
-                        active
+                    {!isActive && unreadCounts[room.id] ? (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground px-1 shrink-0">
+                        {unreadCounts[room.id] > 99 ? "99+" : unreadCounts[room.id]}
                       </span>
-                    )}
+                    ) : null}
                   </button>
                 )
               })
@@ -286,7 +290,7 @@ export function TeamChannelList({
                   .join("")
                   .slice(0, 2)
                   .toUpperCase()
-                const isOnline = partner?.agent_status === "online"
+                const isOnline = Boolean((partner?.user_id && onlineUserIds?.has(partner.user_id)) || partner?.agent_status === "online")
                 const isBusy = partner?.agent_status === "busy"
 
                 return (
@@ -331,15 +335,15 @@ export function TeamChannelList({
                       <span className="truncate">{partnerName}</span>
                     </div>
 
-                    {partner?.account_role && !isActive && (
-                      <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-muted/60 text-muted-foreground shrink-0 uppercase">
-                        {partner.account_role === "owner"
-                          ? "Owner"
-                          : partner.account_role === "admin"
-                            ? "Lead"
-                            : "Agent"}
+                    {!isActive && unreadCounts[dm.id] ? (
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground px-1 shrink-0">
+                        {unreadCounts[dm.id] > 99 ? "99+" : unreadCounts[dm.id]}
                       </span>
-                    )}
+                    ) : partner?.account_role && !isActive ? (
+                      <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-muted/60 text-muted-foreground shrink-0 uppercase">
+                        {partner.account_role === "owner" ? "Owner" : partner.account_role === "admin" ? "Lead" : "Agent"}
+                      </span>
+                    ) : null}
                   </button>
                 )
               })
@@ -475,7 +479,7 @@ export function TeamChannelList({
                     .join("")
                     .slice(0, 2)
                     .toUpperCase()
-                  const isOnline = teammate.agent_status === "online"
+                  const isOnline = Boolean((teammate.user_id && onlineUserIds?.has(teammate.user_id)) || teammate.agent_status === "online")
                   const isBusy = teammate.agent_status === "busy"
                   const isStarting = startingDmUserId === teammate.user_id
 
@@ -547,3 +551,4 @@ export function TeamChannelList({
     </div>
   )
 }
+

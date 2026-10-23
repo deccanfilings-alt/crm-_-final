@@ -355,8 +355,9 @@ export interface Deal {
   assignee?: Profile;
 }
 
-export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
-export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
+export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'halted' | 'interrupted' | 'paused';
+export type FailureDisposition = 'retry' | 'defer' | 'fail' | 'abort' | 'quarantined' | 'suppressed';
+export type RecipientStatus = 'pending' | 'queued' | 'retrying' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed' | 'deferred' | 'quarantined';
 
 export interface Broadcast {
   id: string;

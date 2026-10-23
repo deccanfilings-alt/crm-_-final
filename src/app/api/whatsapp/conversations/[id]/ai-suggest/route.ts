@@ -69,25 +69,12 @@ export async function POST(
       );
     }
 
-    // Priority: OpenAI -> OpenRouter -> Cohere -> Sarvam (based on what we usually use)
-    let selectedProvider = providers.find(p => p.provider === 'openai');
+    // Priority: Anthropic -> OpenAI -> OpenRouter -> Cohere -> Sarvam
+    let selectedProvider = providers.find(p => p.provider === 'anthropic');
+    if (!selectedProvider) selectedProvider = providers.find(p => p.provider === 'openai');
     if (!selectedProvider) selectedProvider = providers.find(p => p.provider === 'openrouter');
     if (!selectedProvider) selectedProvider = providers.find(p => p.provider === 'cohere');
     if (!selectedProvider) selectedProvider = providers[0];
-
-    const baseURL = selectedProvider.provider === "openrouter"
-      ? "https://openrouter.ai/api/v1"
-      : selectedProvider.provider === "sarvam"
-      ? "https://api.sarvam.ai/v1"
-      : undefined;
-
-    // Use a reasonable default model based on provider
-    let model = "gpt-4o-mini";
-    if (selectedProvider.provider === "openrouter") model = "anthropic/claude-3.5-haiku";
-    if (selectedProvider.provider === "cohere") model = "command-r-plus";
-    if (selectedProvider.provider === "sarvam") model = "sarvam-2b"; // fallback
-
-    const openai = new OpenAI({ apiKey: selectedProvider.api_key, baseURL });
 
     const chatHistory = chronologicalHistory
       .filter((m: any) => m.content_text && m.content_text.trim() !== '')
@@ -100,18 +87,57 @@ export async function POST(
     Analyze the following conversation history and draft a concise, professional, and helpful reply to the customer's latest message. 
     Do NOT include placeholders like [Name]. Just provide the exact text the agent should send.`;
 
-    const finalMessages: any[] = [
-      { role: "system", content: systemPrompt },
-      ...chatHistory
-    ];
+    let suggestion: string | undefined | null;
 
-    const completion = await openai.chat.completions.create({
-      model: model,
-      messages: finalMessages,
-      temperature: 0.7,
-    });
+    if (selectedProvider.provider === 'anthropic') {
+      const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': selectedProvider.api_key,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022',
+          max_tokens: 500,
+          system: systemPrompt,
+          messages: chatHistory.length > 0 ? chatHistory : [{ role: 'user', content: 'Hello' }],
+        }),
+      });
 
-    const suggestion = completion.choices[0]?.message?.content;
+      const anthropicData = await anthropicRes.json();
+      if (anthropicData.error) {
+        throw new Error(anthropicData.error.message || 'Anthropic API error');
+      }
+      suggestion = anthropicData.content?.[0]?.text;
+    } else {
+      const baseURL = selectedProvider.provider === "openrouter"
+        ? "https://openrouter.ai/api/v1"
+        : selectedProvider.provider === "sarvam"
+        ? "https://api.sarvam.ai/v1"
+        : undefined;
+
+      // Use a reasonable default model based on provider
+      let model = "gpt-4o-mini";
+      if (selectedProvider.provider === "openrouter") model = "anthropic/claude-3.5-haiku";
+      if (selectedProvider.provider === "cohere") model = "command-r-plus";
+      if (selectedProvider.provider === "sarvam") model = "sarvam-2b"; // fallback
+
+      const openai = new OpenAI({ apiKey: selectedProvider.api_key, baseURL });
+
+      const finalMessages: any[] = [
+        { role: "system", content: systemPrompt },
+        ...chatHistory
+      ];
+
+      const completion = await openai.chat.completions.create({
+        model: model,
+        messages: finalMessages,
+        temperature: 0.7,
+      });
+
+      suggestion = completion.choices[0]?.message?.content;
+    }
 
     if (!suggestion) {
       return NextResponse.json({ error: "Empty response from LLM" }, { status: 500 });

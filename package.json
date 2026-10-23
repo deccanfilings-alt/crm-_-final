@@ -29,14 +29,16 @@
   },
   "scripts": {
     "dev": "set NODE_OPTIONS=--max-old-space-size=1024 && next dev",
-    "build": "next build",
+    "dev:webpack": "set NODE_OPTIONS=--max-old-space-size=1024 && next dev --webpack",
+    "build": "set NODE_OPTIONS=--max-old-space-size=2048 && next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "mcp": "node scripts/wacrm-mcp.js"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

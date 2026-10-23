@@ -208,6 +208,11 @@ export function SettingsOverview({
             } custom field${counts?.customFields === 1 ? '' : 's'}`,
     },
     {
+      section: 'api-keys',
+      loading: false,
+      subtitle: 'Claude Code, Codex, MCP & OpenAPI',
+    },
+    {
       section: 'backups',
       loading: false,
       subtitle: (

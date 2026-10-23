@@ -60,59 +60,80 @@ export async function GET() {
       );
     }
 
-    // Call Meta Graph API for real-time Phone Number Health & Quality Metrics
-    const fields = [
-      'quality_rating',
-      'verified_name',
-      'code_verification_status',
-      'display_phone_number',
-      'name_status',
-      'messaging_limit_tier',
-      'throughput',
-      'is_official_business_account',
-    ].join(',');
+    const authHeader = { Authorization: `Bearer ${accessToken}` };
 
-    const metaRes = await fetch(
-      `${META_API_BASE}/${config.phone_number_id}?fields=${fields}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      }
-    );
+    // 1. Live read from PHONE_NUMBER_ID
+    const phoneFields = 'status,quality_rating,throughput,display_phone_number,verified_name';
+    const phoneRes = await fetch(`${META_API_BASE}/${config.phone_number_id}?fields=${phoneFields}`, {
+      headers: authHeader,
+    });
 
-    if (!metaRes.ok) {
-      const errBody = await metaRes.json().catch(() => ({}));
+    if (!phoneRes.ok) {
+      const errBody = await phoneRes.json().catch(() => ({}));
       const parsed = parseMetaError(errBody);
       return NextResponse.json(
         {
           configured: true,
           healthy: false,
-          error: parsed.userMessage || 'Failed to query Meta Graph API',
+          error: parsed.userMessage || 'Failed to query Phone Number health from Meta',
           code: parsed.code,
           action: parsed.action,
-          rawStatus: metaRes.status,
         },
         { status: 200 }
       );
     }
+    const phoneData = await phoneRes.json();
 
-    const metaData = await metaRes.json();
+    // 2. Live read from WABA_ID for messaging limit
+    let messagingLimit = null;
+    if (config.waba_id) {
+      const wabaRes = await fetch(
+        `${META_API_BASE}/${config.waba_id}?fields=whatsapp_business_manager_messaging_limit`,
+        { headers: authHeader }
+      );
+      if (wabaRes.ok) {
+        const wabaData = await wabaRes.json();
+        messagingLimit = wabaData.whatsapp_business_manager_messaging_limit || null;
+      }
+    }
 
-    const qualityRating = metaData.quality_rating || 'UNKNOWN';
-    const isDegraded = qualityRating === 'RED' || qualityRating === 'YELLOW';
+    // 3. Live read from WABA_ID/message_templates for status & quality score
+    let templates: any[] = [];
+    let pausedOrDisabledTemplates: any[] = [];
+    if (config.waba_id) {
+      const tplRes = await fetch(
+        `${META_API_BASE}/${config.waba_id}/message_templates?fields=name,language,status,quality_score`,
+        { headers: authHeader }
+      );
+      if (tplRes.ok) {
+        const tplData = await tplRes.json();
+        templates = tplData.data || [];
+        pausedOrDisabledTemplates = templates.filter(
+          (t) => t.status === 'PAUSED' || t.status === 'DISABLED' || t.status === 'REJECTED'
+        );
+      }
+    }
+
+    const qualityRating = phoneData.quality_rating || 'UNKNOWN';
+    const isDegraded = qualityRating === 'RED' || qualityRating === 'YELLOW' || phoneData.status === 'RESTRICTED' || phoneData.status === 'FLAGGED';
 
     return NextResponse.json({
       configured: true,
-      healthy: !isDegraded,
+      healthy: !isDegraded && pausedOrDisabledTemplates.length === 0,
+      phoneStatus: phoneData.status || 'CONNECTED',
       qualityRating,
-      messagingLimitTier: metaData.messaging_limit_tier || 'TIER_UNKNOWN',
-      verifiedName: metaData.verified_name || null,
-      displayPhoneNumber: metaData.display_phone_number || null,
-      nameStatus: metaData.name_status || 'UNKNOWN',
-      verificationStatus: metaData.code_verification_status || 'UNKNOWN',
-      isOfficialBusinessAccount: !!metaData.is_official_business_account,
-      throughput: metaData.throughput || null,
+      messagingLimit: messagingLimit || 'NOT_SET',
+      verifiedName: phoneData.verified_name || null,
+      displayPhoneNumber: phoneData.display_phone_number || null,
+      throughput: phoneData.throughput || null,
+      templatesCount: templates.length,
+      pausedOrDisabledCount: pausedOrDisabledTemplates.length,
+      pausedOrDisabledTemplates: pausedOrDisabledTemplates.map((t) => ({
+        name: t.name,
+        language: t.language,
+        status: t.status,
+        qualityScore: t.quality_score?.score || null,
+      })),
       phoneNumberId: config.phone_number_id,
       wabaId: config.waba_id,
       timestamp: new Date().toISOString(),

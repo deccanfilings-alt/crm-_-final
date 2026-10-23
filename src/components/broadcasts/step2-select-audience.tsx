@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import {
   Tags,
   Filter,
   Upload,
+  Download,
   Loader2,
   ArrowRight,
   ArrowLeft,
@@ -76,6 +77,232 @@ const OPERATOR_OPTIONS: { value: CustomFieldOperator; label: string }[] = [
   { value: 'is_not', label: 'is not' },
   { value: 'contains', label: 'contains' },
 ];
+
+// ---------------------------------------------------------------------------
+// CSV Upload Panel
+// ---------------------------------------------------------------------------
+function CsvUploadPanel({
+  csvContacts,
+  onChange,
+}: {
+  csvContacts: { phone: string; name?: string }[];
+  onChange: (contacts: { phone: string; name?: string }[]) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function parseCsv(text: string) {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) {
+      setError('CSV must have a header row and at least one data row.');
+      return;
+    }
+    const cleanHeader = (h: string) =>
+      h.trim().toLowerCase().replace(/["']/g, '').replace(/[\s_\-]+/g, '_');
+
+    const headers = lines[0].split(',').map(cleanHeader);
+    const phoneIdx = headers.findIndex((h) =>
+      [
+        'phone',
+        'phone_number',
+        'phonenumber',
+        'phoneno',
+        'phone_no',
+        'mobile',
+        'mobile_number',
+        'mobilenumber',
+        'mobileno',
+        'mobile_no',
+        'number',
+        'contact_number',
+        'contactnumber',
+        'contact_no',
+        'whatsapp',
+        'whatsapp_number',
+        'whatsappnumber',
+      ].includes(h) || h.includes('phone') || h.includes('mobile'),
+    );
+    const nameIdx = headers.findIndex((h) =>
+      [
+        'name',
+        'full_name',
+        'fullname',
+        'contact_name',
+        'contactname',
+        'first_name',
+        'firstname',
+        'customer_name',
+        'customername',
+        'client_name',
+      ].includes(h) || (h.includes('name') && !h.includes('file')),
+    );
+    if (phoneIdx === -1) {
+      setError(
+        'Could not find a phone column. Expected a header named: phone, phone number, mobile, or whatsapp.',
+      );
+      return;
+    }
+    const contacts: { phone: string; name?: string }[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+      const rawPhone = cols[phoneIdx]?.trim();
+      if (!rawPhone) continue;
+      // Filter out non-numeric cells like '#ERROR!' or headers
+      const digits = rawPhone.replace(/\D/g, '');
+      if (digits.length < 7) continue;
+
+      const name = nameIdx !== -1 ? cols[nameIdx]?.trim() || undefined : undefined;
+      contacts.push({ phone: rawPhone.replace(/\s+/g, ''), ...(name ? { name } : {}) });
+    }
+    if (contacts.length === 0) {
+      setError('No valid phone numbers found in the CSV.');
+      return;
+    }
+    setError(null);
+    onChange(contacts);
+  }
+
+  function handleFile(file: File) {
+    if (!file.name.endsWith('.csv') && file.type !== 'text/csv') {
+      setError('Please upload a .csv file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => parseCsv(e.target?.result as string);
+    reader.readAsText(file);
+  }
+
+  function downloadSampleCsv() {
+    const csvContent = 'phone,name\n9876543210,Rahul Sharma\n919876543211,Priya Patel\n9876543212,Amit Kumar\n';
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'broadcast_sample_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const preview = csvContacts.slice(0, 5);
+
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-foreground">Upload CSV</p>
+          <p className="text-xs text-muted-foreground">
+            CSV must include a <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">phone</code> column.
+            Optionally include a <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">name</code> column.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={downloadSampleCsv}
+          className="flex items-center gap-1.5 text-xs font-medium border-border hover:bg-muted shrink-0"
+        >
+          <Download className="h-3.5 w-3.5 text-primary" />
+          Download Sample CSV
+        </Button>
+      </div>
+
+      {csvContacts.length === 0 ? (
+        <div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+          }}
+          onClick={() => fileInputRef.current?.click()}
+          className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-8 transition-colors ${
+            dragOver
+              ? 'border-primary bg-primary/10'
+              : 'border-border hover:border-primary/50 hover:bg-primary/5'
+          }`}
+        >
+          <Upload className="h-8 w-8 text-muted-foreground" />
+          <p className="text-sm font-medium text-foreground">Drag &amp; drop or click to browse</p>
+          <p className="text-xs text-muted-foreground">
+            .csv files only · or{' '}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                downloadSampleCsv();
+              }}
+              className="text-primary underline hover:text-primary/80 font-medium"
+            >
+              download sample template
+            </button>
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleFile(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">
+              {csvContacts.length.toLocaleString()} contacts loaded
+            </span>
+            <button
+              onClick={() => { onChange([]); setError(null); }}
+              className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-red-400 hover:bg-red-500/10"
+            >
+              <X className="h-3 w-3" /> Remove
+            </button>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-border">
+            <table className="w-full text-xs">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Phone</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Name</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((c, i) => (
+                  <tr key={i} className="border-t border-border">
+                    <td className="px-3 py-1.5 text-foreground">{c.phone}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{c.name ?? '—'}</td>
+                  </tr>
+                ))}
+                {csvContacts.length > 5 && (
+                  <tr className="border-t border-border">
+                    <td colSpan={2} className="px-3 py-1.5 text-center text-muted-foreground">
+                      …and {csvContacts.length - 5} more
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <p className="flex items-center gap-1.5 text-xs text-red-400">
+          <X className="h-3.5 w-3.5" /> {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function Step2SelectAudience({
   audience,
@@ -387,6 +614,13 @@ export function Step2SelectAudience({
             </div>
           )}
         </div>
+      )}
+
+      {audience.type === 'csv' && (
+        <CsvUploadPanel
+          csvContacts={audience.csvContacts ?? []}
+          onChange={(contacts) => onUpdate({ ...audience, csvContacts: contacts })}
+        />
       )}
 
       {/* Exclude list — applies regardless of audience type */}

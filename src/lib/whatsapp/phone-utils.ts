@@ -102,3 +102,61 @@ export function phoneVariants(sanitized: string): string[] {
 export function isRecipientNotAllowedError(message: string): boolean {
   return /131030|not in allowed list|not in the allowed list/i.test(message)
 }
+
+export interface PhoneValidationResult {
+  isValid: boolean;
+  sanitized: string;
+  isQuarantined: boolean;
+  reason?: string;
+}
+
+/**
+ * Strict Indian mobile phone validator for broadcast dispatches.
+ *
+ * Rules:
+ *   1. Strip all non-digits
+ *   2. If 12 digits starting with '91', keep the last 10
+ *   3. If 10 digits, keep as-is
+ *   4. The resulting 10 digits MUST start with 6, 7, 8, or 9
+ *   5. Anything else -> quarantined (isQuarantined = true, isValid = false)
+ */
+export function validateBroadcastPhone(phone: string | null | undefined): PhoneValidationResult {
+  if (!phone || typeof phone !== 'string') {
+    return { isValid: false, sanitized: '', isQuarantined: true, reason: 'Empty or missing phone number' };
+  }
+
+  // 1. Strip all non-digits
+  const digits = phone.replace(/\D/g, '');
+
+  let tenDigits = digits;
+
+  // 2 & 3. 12 digits starting with 91, or 10 digits
+  if (digits.length === 12 && digits.startsWith('91')) {
+    tenDigits = digits.slice(-10);
+  } else if (digits.length === 10) {
+    tenDigits = digits;
+  } else {
+    return {
+      isValid: false,
+      sanitized: digits,
+      isQuarantined: true,
+      reason: `Invalid digit count (${digits.length}). Must be 10 digits or 12 digits starting with 91.`,
+    };
+  }
+
+  // 4. Resulting 10 digits MUST start with 6, 7, 8, or 9
+  if (!/^[6789]\d{9}$/.test(tenDigits)) {
+    return {
+      isValid: false,
+      sanitized: tenDigits,
+      isQuarantined: true,
+      reason: `Invalid mobile prefix '${tenDigits[0]}'. Must start with 6, 7, 8, or 9.`,
+    };
+  }
+
+  return {
+    isValid: true,
+    sanitized: tenDigits,
+    isQuarantined: false,
+  };
+}

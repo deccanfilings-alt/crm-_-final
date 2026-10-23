@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 
 const PROVIDERS = [
+  { id: 'anthropic', name: 'Anthropic (Claude)', url: 'https://console.anthropic.com/settings/keys', note: 'Claude 3.7 / 3.5 Sonnet (Agentic & LLM)' },
   { id: 'openai', name: 'OpenAI', url: 'https://platform.openai.com/api-keys', note: 'LLM + embeddings' },
   { id: 'openrouter', name: 'OpenRouter', url: 'https://openrouter.ai/keys', note: 'LLM (recommended)' },
   { id: 'cohere', name: 'Cohere', url: 'https://dashboard.cohere.com/api-keys', note: 'Embeddings (free tier)' },

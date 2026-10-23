@@ -122,8 +122,18 @@ export async function GET(
       reactionsMap.set(r.message_id, list)
     }
 
+    const msgMap = new Map(messages.map((m: any) => [m.id, m]))
     // Enrich messages
     const enrichedMessages = messages.map((m: any) => {
+      const replyMsg = m.reply_to_id ? msgMap.get(m.reply_to_id) : null
+      const replySender = replyMsg ? senderMap.get(replyMsg.sender_id) : null
+      const reply_to = replyMsg
+        ? {
+            id: replyMsg.id,
+            content: replyMsg.content,
+            sender_name: replySender?.full_name || 'Teammate',
+          }
+        : null
       const sender = senderMap.get(m.sender_id) || {
         user_id: m.sender_id,
         full_name: 'Team Member',
@@ -136,6 +146,7 @@ export async function GET(
         ...m,
         sender,
         reactions: reactionsMap.get(m.id) || [],
+        reply_to,
         tagged_contacts,
       }
     })
@@ -383,3 +394,70 @@ export async function DELETE(
   }
 }
 
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ roomId: string }> }
+) {
+  try {
+    const { roomId } = await params
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id, account_role')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    const accountId = profile?.account_id as string | undefined
+    if (!accountId) {
+      return NextResponse.json({ error: 'No account linked' }, { status: 403 })
+    }
+
+    const body = await request.json()
+    const { messageId, content } = body
+
+    if (!messageId || !content || typeof content !== 'string' || !content.trim()) {
+      return NextResponse.json({ error: 'Message ID and content are required' }, { status: 400 })
+    }
+
+    const { data: existing } = await supabaseAdmin()
+      .from('team_messages')
+      .select('id, sender_id')
+      .eq('id', messageId)
+      .eq('room_id', roomId)
+      .maybeSingle()
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Message not found' }, { status: 404 })
+    }
+
+    const isAuthor = existing.sender_id === user.id
+    const isOwnerOrAdmin = profile?.account_role === 'owner' || profile?.account_role === 'admin'
+    if (!isAuthor && !isOwnerOrAdmin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { data: updated, error } = await supabaseAdmin()
+      .from('team_messages')
+      .update({ content: content.trim(), updated_at: new Date().toISOString() })
+      .eq('id', messageId)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    return NextResponse.json({ success: true, message: updated })
+  } catch (error: any) {
+    console.error('[team-chat] PATCH message error:', error)
+    return NextResponse.json({ error: error.message || 'Failed to edit message' }, { status: 500 })
+  }
+}

@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Send, AtSign, Paperclip, X, Image as ImageIcon, Users, UserCheck, Loader2, Megaphone, CircleDot } from "lucide-react"
+import { Send, AtSign, Paperclip, X, Image as ImageIcon, Users, UserCheck, Loader2, Megaphone, CircleDot, CornerUpLeft, Mic, Square } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { uploadAccountMedia } from "@/lib/storage/upload-media"
@@ -66,16 +66,27 @@ interface TeamMessageComposerProps {
     content: string,
     taggedContactIds: string[],
     mentionedUserIds: string[],
-    attachments?: TeamChatAttachment[]
+    attachments?: TeamChatAttachment[],
+    replyToId?: string | null
   ) => Promise<void>
   disabled?: boolean
   placeholder?: string
+  onTyping?: () => void
+  replyTo?: {
+    id: string
+    content: string
+    sender_name?: string
+  } | null
+  onCancelReply?: () => void
 }
 
 export function TeamMessageComposer({
   onSendMessage,
   disabled = false,
   placeholder = "Message #channel... Type @ to mention, or attach GIFs/media",
+  onTyping,
+  replyTo,
+  onCancelReply,
 }: TeamMessageComposerProps) {
   const [content, setContent] = useState("")
   const [sending, setSending] = useState(false)
@@ -90,6 +101,11 @@ export function TeamMessageComposer({
   const [mentionContacts, setMentionContacts] = useState<MentionContact[]>([])
   const [taggedContacts, setTaggedContacts] = useState<Map<string, MentionContact>>(new Map())
   const [mentionedUsers, setMentionedUsers] = useState<Map<string, MentionMember>>(new Map())
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordSeconds, setRecordSeconds] = useState(0)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -113,6 +129,7 @@ export function TeamMessageComposer({
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
     setContent(val)
+    onTyping?.()
 
     const cursorPos = e.target.selectionStart || 0
     const textBeforeCursor = val.slice(0, cursorPos)
@@ -181,6 +198,61 @@ export function TeamMessageComposer({
       sm.label.toLowerCase().includes(mentionQuery.toLowerCase()) ||
       sm.description.toLowerCase().includes(mentionQuery.toLowerCase())
   )
+
+
+  // Start Voice Recording
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data)
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop())
+        if (audioChunksRef.current.length > 0) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+          const audioFile = new File([audioBlob], `voice_note_${Date.now()}.webm`, { type: 'audio/webm' })
+          await handleFileUpload(audioFile)
+        }
+      }
+
+      mediaRecorder.start()
+      setIsRecording(true)
+      setRecordSeconds(0)
+      timerRef.current = setInterval(() => {
+        setRecordSeconds((prev) => prev + 1)
+      }, 1000)
+    } catch (err) {
+      console.error('Failed to access microphone:', err)
+      toast.error('Could not access microphone')
+    }
+  }
+
+  // Stop and save recording
+  const stopRecording = () => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    setIsRecording(false)
+  }
+
+  // Cancel recording without saving
+  const cancelRecording = () => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      audioChunksRef.current = []
+      mediaRecorderRef.current.stop()
+    }
+    setIsRecording(false)
+  }
 
   // Insert a broadcast mention (@channel, @everyone, @here)
   const selectSpecialMention = (sm: SpecialMention) => {
@@ -305,8 +377,10 @@ export function TeamMessageComposer({
         content.trim() || (hasAttachments ? "[Attachment]" : ""),
         taggedIds,
         mentionedIds,
-        attachments
+        attachments,
+        replyTo?.id || null
       )
+      onCancelReply?.()
       setContent("")
       setAttachments([])
       setTaggedContacts(new Map())
@@ -328,6 +402,26 @@ export function TeamMessageComposer({
         className="hidden"
       />
 
+      {/* Quoted Reply Preview Bar */}
+      {replyTo && (
+        <div className="flex items-center justify-between mb-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <CornerUpLeft className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="font-semibold text-primary truncate max-w-[120px]">
+              Replying to {replyTo.sender_name || "Teammate"}:
+            </span>
+            <span className="truncate text-muted-foreground">{replyTo.content}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            className="text-muted-foreground hover:text-foreground rounded p-0.5 ml-2 transition-colors cursor-pointer"
+            title="Cancel reply"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
       {/* Attachments Preview Bar */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2 p-2 rounded-lg bg-muted/40 border border-border/60">
@@ -609,6 +703,23 @@ export function TeamMessageComposer({
           ) : (
             <Paperclip className="h-4 w-4" />
           )}
+        </Button>
+        {/* Voice Note Button */}
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          disabled={uploading}
+          className={cn(
+            "h-8 w-8 shrink-0 rounded-lg transition-colors",
+            isRecording
+              ? "text-destructive bg-destructive/10 animate-pulse"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+          onClick={isRecording ? stopRecording : startRecording}
+          title={isRecording ? "Stop and attach voice note" : "Record voice message"}
+        >
+          {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
         </Button>
 
         <Textarea

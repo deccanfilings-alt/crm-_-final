@@ -1,9 +1,29 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useState, useRef } from "react"
 import { format } from "date-fns"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Crown, Shield, UserCog, UserCheck, FileText, Download, Megaphone, Users, CircleDot, Trash2 } from "lucide-react"
+import {
+  Crown,
+  Shield,
+  UserCog,
+  UserCheck,
+  FileText,
+  Download,
+  Megaphone,
+  Users,
+  CircleDot,
+  Trash2,
+  Reply,
+  Pencil,
+  Check,
+  X,
+  CornerUpLeft,
+  ExternalLink,
+  ZoomIn,
+  CheckSquare,
+} from "lucide-react"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import type { TeamMessage, TaggedContactInfo, TeamChatAttachment } from "@/types"
 
@@ -14,6 +34,10 @@ interface TeamMessageBubbleProps {
   onToggleReaction: (messageId: string, emoji: string) => void
   onSelectContact: (contact: TaggedContactInfo) => void
   onDeleteMessage?: (messageId: string) => void
+  onReplyMessage?: (message: TeamMessage) => void
+  onEditMessage?: (messageId: string, newContent: string) => Promise<void>
+  onJumpToMessage?: (messageId: string) => void
+  onConvertToTask?: (message: TeamMessage) => void
 }
 
 export function TeamMessageBubble({
@@ -23,8 +47,17 @@ export function TeamMessageBubble({
   onToggleReaction,
   onSelectContact,
   onDeleteMessage,
+  onReplyMessage,
+  onEditMessage,
+  onJumpToMessage,
+  onConvertToTask,
 }: TeamMessageBubbleProps) {
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editContent, setEditContent] = useState(message.content || "")
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+
   const hasBroadcastMention =
     /@channel\b/i.test(message.content || "") ||
     /@everyone\b/i.test(message.content || "") ||
@@ -34,6 +67,11 @@ export function TeamMessageBubble({
     (hasBroadcastMention || message.mentioned_user_ids?.includes(currentUserId))
   const time = format(new Date(message.created_at), "HH:mm")
 
+  const isEdited = Boolean(
+    message.updated_at &&
+    new Date(message.updated_at).getTime() - new Date(message.created_at).getTime() > 1000
+  )
+
   const senderRole = message.sender?.account_role || "agent"
   const senderName = message.sender?.full_name || "Team Member"
   const initials = senderName
@@ -42,6 +80,23 @@ export function TeamMessageBubble({
     .join("")
     .slice(0, 2)
     .toUpperCase()
+
+  const isAuthor = currentUserId === message.sender_id
+  const canModify = isAuthor || userRole === "owner" || userRole === "admin"
+
+  const handleSaveEdit = async () => {
+    if (!editContent.trim() || editContent === message.content) {
+      setIsEditing(false)
+      return
+    }
+    setIsSavingEdit(true)
+    try {
+      await onEditMessage?.(message.id, editContent.trim())
+      setIsEditing(false)
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
 
   // Render message content with parsed @teammate mentions, @{contact:id:name} tokens, and inline GIF URLs
   const renderFormattedContent = () => {
@@ -131,7 +186,8 @@ export function TeamMessageBubble({
             <img
               src={part.trim()}
               alt="GIF"
-              className="max-h-64 max-w-sm rounded-xl object-contain border border-border shadow-xs"
+              className="max-h-64 max-w-sm rounded-xl object-contain border border-border shadow-xs cursor-pointer hover:opacity-95"
+              onClick={() => setLightboxImage(part.trim())}
               loading="lazy"
             />
           </div>
@@ -166,18 +222,25 @@ export function TeamMessageBubble({
             att.type?.startsWith("audio/") ||
             att.url.toLowerCase().endsWith(".mp3") ||
             att.url.toLowerCase().endsWith(".ogg") ||
-            att.url.toLowerCase().endsWith(".wav")
+            att.url.toLowerCase().endsWith(".wav") ||
+            att.name.includes("voice_note")
 
           if (isImageOrGif) {
             return (
-              <div key={i} className="relative group/att rounded-xl overflow-hidden border border-border shadow-xs max-w-sm">
+              <div
+                key={i}
+                className="relative group/att rounded-xl overflow-hidden border border-border shadow-xs max-w-sm cursor-pointer"
+                onClick={() => setLightboxImage(att.url)}
+              >
                 <img
                   src={att.url}
                   alt={att.name}
-                  className="max-h-72 w-auto object-contain cursor-pointer transition-transform hover:scale-[1.01]"
-                  onClick={() => window.open(att.url, "_blank")}
+                  className="max-h-72 w-auto object-contain transition-transform group-hover/att:scale-[1.02]"
                   loading="lazy"
                 />
+                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/att:opacity-100 transition-opacity flex items-center justify-center text-white">
+                  <ZoomIn className="h-6 w-6" />
+                </div>
               </div>
             )
           }
@@ -192,8 +255,16 @@ export function TeamMessageBubble({
 
           if (isAudio) {
             return (
-              <div key={i} className="w-full max-w-sm">
-                <audio src={att.url} controls className="w-full" />
+              <div key={i} className="w-full max-w-sm rounded-xl border border-border bg-card p-2.5 shadow-xs">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[11px] font-medium text-foreground">
+                    🎤 Voice Message
+                  </span>
+                  <span className="text-[10px] text-muted-foreground ml-auto">
+                    {att.size ? `${(att.size / 1024).toFixed(1)} KB` : ""}
+                  </span>
+                </div>
+                <audio src={att.url} controls className="w-full h-8" />
               </div>
             )
           }
@@ -237,98 +308,184 @@ export function TeamMessageBubble({
   }
 
   return (
-    <div
-      className={cn(
-        "group relative flex gap-3 px-4 py-2 hover:bg-muted/40 transition-colors",
-        isMentioned && "bg-amber-500/10 border-l-2 border-amber-500 hover:bg-amber-500/15"
-      )}
-    >
-      {/* Sender Avatar */}
-      <Avatar className="h-8 w-8 shrink-0 mt-0.5 border border-border">
-        <AvatarImage src={message.sender?.avatar_url || undefined} alt={senderName} />
-        <AvatarFallback className="text-xs bg-muted font-medium text-foreground">
-          {initials}
-        </AvatarFallback>
-      </Avatar>
+    <>
+      <div
+        id={`message-${message.id}`}
+        className={cn(
+          "group relative flex gap-3 px-4 py-2 hover:bg-muted/40 transition-colors",
+          isMentioned && "bg-amber-500/10 border-l-2 border-amber-500 hover:bg-amber-500/15"
+        )}
+      >
+        {/* Sender Avatar */}
+        <Avatar className="h-8 w-8 shrink-0 mt-0.5 border border-border">
+          <AvatarImage src={message.sender?.avatar_url || undefined} alt={senderName} />
+          <AvatarFallback className="text-xs bg-muted font-medium text-foreground">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
 
-      <div className="min-w-0 flex-1">
-        {/* Header (Sender Name, Role Badge, Timestamp) */}
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="font-semibold text-xs text-foreground truncate">
-            {senderName}
-          </span>
+        <div className="min-w-0 flex-1">
+          {/* Header (Sender Name, Role Badge, Timestamp, Edited Tag) */}
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="font-semibold text-xs text-foreground truncate">
+              {senderName}
+            </span>
 
-          {senderRole === "owner" ? (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-500">
-              <Crown className="h-2.5 w-2.5" />
-              Owner
+            {senderRole === "owner" ? (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-500">
+                <Crown className="h-2.5 w-2.5" />
+                Owner
+              </span>
+            ) : senderRole === "admin" ? (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-primary/30 bg-primary/10 text-primary">
+                <Shield className="h-2.5 w-2.5" />
+                Team Leader
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-border bg-muted/60 text-muted-foreground">
+                <UserCog className="h-2.5 w-2.5" />
+                Team Member
+              </span>
+            )}
+
+            <span className="text-[10px] text-muted-foreground ml-auto group-hover:opacity-100 opacity-70 flex items-center gap-1">
+              {isEdited && <span className="italic text-[9px] text-muted-foreground/80">(edited)</span>}
+              {time}
             </span>
-          ) : senderRole === "admin" ? (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-primary/30 bg-primary/10 text-primary">
-              <Shield className="h-2.5 w-2.5" />
-              Team Leader
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-border bg-muted/60 text-muted-foreground">
-              <UserCog className="h-2.5 w-2.5" />
-              Team Member
-            </span>
+          </div>
+
+          {/* Quoted Reply Preview */}
+          {message.reply_to && (
+            <div
+              onClick={() => onJumpToMessage?.(message.reply_to!.id)}
+              className="flex items-center gap-2 mb-1.5 px-2.5 py-1 rounded-md bg-muted/60 border-l-2 border-primary text-xs cursor-pointer hover:bg-muted transition-colors max-w-lg"
+              title="Click to view original message"
+            >
+              <CornerUpLeft className="h-3 w-3 text-primary shrink-0" />
+              <span className="font-semibold text-[11px] text-primary truncate max-w-[120px]">
+                {message.reply_to.sender_name || "Teammate"}:
+              </span>
+              <span className="truncate text-[11px] text-muted-foreground">
+                {message.reply_to.content}
+              </span>
+            </div>
           )}
 
-          <span className="text-[10px] text-muted-foreground ml-auto group-hover:opacity-100 opacity-70">
-            {time}
-          </span>
+          {/* Message Content or Inline Edit Mode */}
+          {isEditing ? (
+            <div className="mt-1 space-y-2">
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-primary/50 bg-background p-2 text-xs focus:outline-hidden focus:ring-1 focus:ring-primary"
+                autoFocus
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingEdit}
+                  onClick={handleSaveEdit}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <Check className="h-3.5 w-3.5" /> Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditing(false)
+                    setEditContent(message.content || "")
+                  }}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80"
+                >
+                  <X className="h-3.5 w-3.5" /> Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs leading-relaxed text-foreground break-words">
+              {renderFormattedContent()}
+            </div>
+          )}
+
+          {/* Multimedia Attachments */}
+          {renderAttachments()}
+
+          {/* Reactions row */}
+          {reactionMap.size > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {Array.from(reactionMap.entries()).map(([emoji, { count, reactedByMe }]) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => onToggleReaction(message.id, emoji)}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border transition-colors",
+                    reactedByMe
+                      ? "bg-primary/15 border-primary/40 text-primary"
+                      : "bg-card border-border hover:bg-muted text-muted-foreground"
+                  )}
+                >
+                  <span>{emoji}</span>
+                  <span className="text-[10px] font-medium">{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Message Content */}
-        <div className="text-xs leading-relaxed text-foreground break-words">
-          {renderFormattedContent()}
-        </div>
+        {/* Hover Action Bar */}
+        <div className="absolute right-4 top-2 hidden group-hover:flex items-center gap-1 rounded-lg border border-border bg-popover/90 backdrop-blur-sm p-1 shadow-sm z-10">
+          {/* Quick Reaction Emojis */}
+          {["👍", "❤️", "😂", "🚀", "🔥"].map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => onToggleReaction(message.id, emoji)}
+              className="rounded p-1 hover:bg-muted text-xs transition-colors"
+              title={`React with ${emoji}`}
+            >
+              {emoji}
+            </button>
+          ))}
 
-        {/* Multimedia Attachments (Images, GIFs, Videos, Docs) */}
-        {renderAttachments()}
+          <div className="h-3.5 w-px bg-border/80 mx-0.5" />
 
-        {/* Reactions row */}
-        {reactionMap.size > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {Array.from(reactionMap.entries()).map(([emoji, { count, reactedByMe }]) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => onToggleReaction(message.id, emoji)}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs border transition-colors",
-                  reactedByMe
-                    ? "bg-primary/15 border-primary/40 text-primary"
-                    : "bg-card border-border hover:bg-muted text-muted-foreground"
-                )}
-              >
-                <span>{emoji}</span>
-                <span className="text-[10px] font-medium">{count}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Hover Action Bar */}
-      <div className="absolute right-4 top-2 hidden group-hover:flex items-center gap-1 rounded-lg border border-border bg-popover/90 backdrop-blur-sm p-1 shadow-sm z-10">
-        {["👍", "❤️", "😂", "🚀"].map((emoji) => (
+          {/* Reply Button */}
           <button
-            key={emoji}
             type="button"
-            onClick={() => onToggleReaction(message.id, emoji)}
-            className="rounded p-1 hover:bg-muted text-xs transition-colors"
-            title={`React with ${emoji}`}
+            onClick={() => onReplyMessage?.(message)}
+            className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted text-xs transition-colors"
+            title="Quote Reply"
           >
-            {emoji}
+            <Reply className="h-3.5 w-3.5" />
           </button>
-        ))}
+          {/* Convert to CRM Task Button */}
+          <button
+            type="button"
+            onClick={() => onConvertToTask?.(message)}
+            className="rounded p-1 text-muted-foreground hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 text-xs transition-colors"
+            title="Convert to Task"
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
+          </button>
 
-        {currentUserId &&
-          (currentUserId === message.sender_id || userRole === "owner" || userRole === "admin") && (
+
+          {/* Edit Button (author or lead) */}
+          {canModify && !isEditing && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted text-xs transition-colors"
+              title="Edit message"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {/* Delete Button */}
+          {canModify && (
             <>
-              <div className="h-3.5 w-px bg-border/80 mx-0.5" />
               {confirmDelete ? (
                 <div className="flex items-center gap-1 pl-0.5">
                   <button
@@ -361,7 +518,33 @@ export function TeamMessageBubble({
               )}
             </>
           )}
+        </div>
       </div>
-    </div>
+
+      {/* Lightbox Dialog */}
+      <Dialog open={Boolean(lightboxImage)} onOpenChange={(open) => !open && setLightboxImage(null)}>
+        <DialogContent className="max-w-4xl p-2 bg-black/90 border-zinc-800 text-white flex flex-col items-center justify-center">
+          {lightboxImage && (
+            <div className="relative flex flex-col items-center">
+              <img
+                src={lightboxImage}
+                alt="Enlarged media"
+                className="max-h-[80vh] w-auto max-w-full rounded-lg object-contain shadow-2xl"
+              />
+              <div className="mt-3 flex items-center gap-3">
+                <a
+                  href={lightboxImage}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-white transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Open Original
+                </a>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

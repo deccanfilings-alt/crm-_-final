@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  canonicalPhone,
   dedupeByPhone,
   findExistingContact,
+  getPhoneLookupKeys,
   isExactMatch,
   isUniqueViolation,
   normalizeKey,
@@ -16,6 +18,39 @@ describe("normalizeKey", () => {
 
   it("collapses different formats of the same number to one key", () => {
     expect(normalizeKey("+44 7911 123456")).toBe(normalizeKey("447911123456"));
+  });
+});
+
+describe("canonicalPhone", () => {
+  it("prepends 91 to 10-digit Indian numbers", () => {
+    expect(canonicalPhone("7995544799")).toBe("917995544799");
+    expect(canonicalPhone("+91 79955 44799")).toBe("917995544799");
+    expect(canonicalPhone("917995544799")).toBe("917995544799");
+  });
+
+  it("leaves other numbers as digits-only", () => {
+    expect(canonicalPhone("+1 (555) 123-4567")).toBe("15551234567");
+    expect(canonicalPhone("12345")).toBe("12345");
+  });
+});
+
+describe("getPhoneLookupKeys", () => {
+  it("generates both 10-digit and 12-digit variants for 10-digit numbers", () => {
+    const keys = getPhoneLookupKeys("7995544799");
+    expect(keys).toContain("7995544799");
+    expect(keys).toContain("917995544799");
+  });
+
+  it("generates both 12-digit and 10-digit variants for 12-digit Indian numbers", () => {
+    const keys = getPhoneLookupKeys("917995544799");
+    expect(keys).toContain("917995544799");
+    expect(keys).toContain("7995544799");
+  });
+
+  it("handles formatting and +91 prefix", () => {
+    const keys = getPhoneLookupKeys("+91 79955 44799");
+    expect(keys).toContain("917995544799");
+    expect(keys).toContain("7995544799");
   });
 });
 
@@ -37,9 +72,23 @@ describe("isExactMatch", () => {
 describe("isUniqueViolation", () => {
   it("detects Postgres 23505", () => {
     expect(isUniqueViolation({ code: "23505" })).toBe(true);
+    expect(isUniqueViolation({ code: 23505 })).toBe(true);
+  });
+  it("detects unique violation messages from PostgREST/Supabase", () => {
+    expect(
+      isUniqueViolation({
+        message: 'duplicate key value violates unique constraint "idx_contacts_account_phone_normalized"',
+      })
+    ).toBe(true);
+    expect(
+      isUniqueViolation({
+        details: 'Key (account_id, phone_normalized)=(abc, 917995544799) already exists.',
+      })
+    ).toBe(true);
   });
   it("is false for other errors / non-objects", () => {
     expect(isUniqueViolation({ code: "23502" })).toBe(false);
+    expect(isUniqueViolation({ message: "network timeout" })).toBe(false);
     expect(isUniqueViolation(null)).toBe(false);
     expect(isUniqueViolation("boom")).toBe(false);
   });
@@ -62,6 +111,16 @@ describe("dedupeByPhone", () => {
       { phone: "+1 555-3333" },
     ]);
     expect(unique).toHaveLength(1);
+    expect(duplicates).toBe(1);
+  });
+
+  it("deduplicates 10-digit and 12-digit (91) versions of the same Indian number", () => {
+    const { unique, duplicates } = dedupeByPhone([
+      { phone: "7995544799", name: "First" },
+      { phone: "917995544799", name: "Second" },
+    ]);
+    expect(unique).toHaveLength(1);
+    expect(unique[0].name).toBe("First");
     expect(duplicates).toBe(1);
   });
 });
