@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '@/lib/flows/admin-client';
+﻿import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { engineSendText, engineSendTemplate } from '@/lib/automations/meta-send';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import type { MCPToolCallParams, MCPToolResult } from './types';
@@ -32,14 +32,27 @@ export async function executeMCPTool(
 
         const { data, error } = await db
           .from('contacts')
-          .select('id, name, phone, email, company, tags, custom_fields, created_at, last_active_at')
+          .select('id, name, phone, email, company, avatar_url, created_at, updated_at, contact_tags(tags(name))')
           .eq('account_id', accountId)
           .or(`name.ilike.%${query}%,phone.ilike.%${query}%,email.ilike.%${query}%,company.ilike.%${query}%`)
           .limit(limit);
 
         if (error) throw error;
+
+        const contacts = (data || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          email: c.email,
+          company: c.company,
+          avatar_url: c.avatar_url,
+          created_at: c.created_at,
+          updated_at: c.updated_at,
+          tags: (c.contact_tags || []).map((ct: any) => ct.tags?.name).filter(Boolean),
+        }));
+
         return {
-          content: [{ type: 'text', text: JSON.stringify({ contacts: data || [], count: data?.length || 0 }, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify({ contacts, count: contacts.length }, null, 2) }],
         };
       }
 
@@ -54,7 +67,7 @@ export async function executeMCPTool(
 
         const { data: contact, error } = await db
           .from('contacts')
-          .select('*')
+          .select('*, contact_tags(tags(name))')
           .eq('id', contactId)
           .eq('account_id', accountId)
           .maybeSingle();
@@ -69,7 +82,7 @@ export async function executeMCPTool(
         // Fetch open deals and recent conversation
         const { data: deals } = await db
           .from('deals')
-          .select('id, title, value, currency, stage_id, created_at')
+          .select('id, title, value, currency, stage_id, status, created_at')
           .eq('contact_id', contactId)
           .eq('account_id', accountId);
 
@@ -82,11 +95,17 @@ export async function executeMCPTool(
           .limit(1)
           .maybeSingle();
 
+        const tags = (contact.contact_tags || []).map((ct: any) => ct.tags?.name).filter(Boolean);
+
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ contact, linked_deals: deals || [], recent_conversation: conv || null }, null, 2),
+              text: JSON.stringify({
+                contact: { ...contact, tags, contact_tags: undefined },
+                linked_deals: deals || [],
+                recent_conversation: conv || null,
+              }, null, 2),
             },
           ],
         };
@@ -106,22 +125,19 @@ export async function executeMCPTool(
         // Check if contact already exists
         const { data: existing } = await db
           .from('contacts')
-          .select('id, name, phone, email, tags, custom_fields')
+          .select('id, name, phone, email, company')
           .eq('account_id', accountId)
           .eq('phone', sanitized)
           .maybeSingle();
 
-        const updatePayload: Record<string, any> = {};
+        const updatePayload: Record<string, any> = {
+          updated_at: new Date().toISOString(),
+        };
         if (args.name) updatePayload.name = args.name;
         if (args.email) updatePayload.email = args.email;
         if (args.company) updatePayload.company = args.company;
-        if (Array.isArray(args.tags)) updatePayload.tags = args.tags;
-        if (args.custom_fields && typeof args.custom_fields === 'object') {
-          updatePayload.custom_fields = {
-            ...(existing?.custom_fields || {}),
-            ...args.custom_fields,
-          };
-        }
+
+        let contactRecord: any = null;
 
         if (existing) {
           const { data, error } = await db
@@ -132,9 +148,7 @@ export async function executeMCPTool(
             .single();
 
           if (error) throw error;
-          return {
-            content: [{ type: 'text', text: JSON.stringify({ status: 'updated', contact: data }, null, 2) }],
-          };
+          contactRecord = data;
         } else {
           const { data, error } = await db
             .from('contacts')
@@ -144,17 +158,53 @@ export async function executeMCPTool(
               name: args.name || sanitized,
               email: args.email || null,
               company: args.company || null,
-              tags: Array.isArray(args.tags) ? args.tags : [],
-              custom_fields: args.custom_fields || {},
             })
             .select('*')
             .single();
 
           if (error) throw error;
-          return {
-            content: [{ type: 'text', text: JSON.stringify({ status: 'created', contact: data }, null, 2) }],
-          };
+          contactRecord = data;
         }
+
+        // Handle tags if provided
+        if (Array.isArray(args.tags) && args.tags.length > 0 && contactRecord?.id) {
+          for (const tagName of args.tags) {
+            const cleanTagName = String(tagName).trim();
+            if (!cleanTagName) continue;
+
+            let { data: tagRow } = await db
+              .from('tags')
+              .select('id')
+              .eq('account_id', accountId)
+              .ilike('name', cleanTagName)
+              .maybeSingle();
+
+            if (!tagRow) {
+              const { data: newTag } = await db
+                .from('tags')
+                .insert({ account_id: accountId, name: cleanTagName, color: '#6366f1' })
+                .select('id')
+                .single();
+              tagRow = newTag;
+            }
+
+            if (tagRow?.id) {
+              await db
+                .from('contact_tags')
+                .upsert({ contact_id: contactRecord.id, tag_id: tagRow.id }, { onConflict: 'contact_id,tag_id' });
+            }
+          }
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              status: existing ? 'updated' : 'created',
+              contact: contactRecord,
+            }, null, 2),
+          }],
+        };
       }
 
       // -------------------------------------------------------------
@@ -211,18 +261,31 @@ export async function executeMCPTool(
 
         const { data: messages, error } = await db
           .from('messages')
-          .select('id, sender_type, content_text, media_url, media_type, created_at, whatsapp_message_id')
+          .select('id, sender_type, content_type, content_text, media_url, status, is_internal, created_at, message_id')
           .eq('conversation_id', conversationId)
           .order('created_at', { ascending: false })
           .limit(limit);
 
         if (error) throw error;
 
-        // Reverse to chronological order
-        const chronological = (messages || []).reverse();
+        // Map media_type & whatsapp_message_id for client compatibility
+        const formattedMessages = (messages || []).map((m: any) => ({
+          ...m,
+          media_type: m.content_type,
+          whatsapp_message_id: m.message_id,
+        }));
 
         return {
-          content: [{ type: 'text', text: JSON.stringify({ conversation: conv, messages: chronological }, null, 2) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                { conversation_id: conversationId, messages: formattedMessages.reverse(), count: formattedMessages.length },
+                null,
+                2
+              ),
+            },
+          ],
         };
       }
 
@@ -380,10 +443,10 @@ export async function executeMCPTool(
         const { data: note, error } = await db
           .from('messages')
           .insert({
-            account_id: accountId,
             conversation_id: conversationId,
-            sender_type: 'note',
+            sender_type: 'agent',
             content_text: noteText,
+            is_internal: true,
           })
           .select('*')
           .single();
@@ -405,7 +468,7 @@ export async function executeMCPTool(
 
         let query = db
           .from('deals')
-          .select('id, title, value, currency, stage_id, pipeline_id, contact_id, probability, created_at, contacts(id, name, phone)')
+          .select('id, title, value, currency, stage_id, pipeline_id, contact_id, status, notes, expected_close_date, created_at, contacts(id, name, phone)')
           .eq('account_id', accountId);
 
         if (pipelineId) query = query.eq('pipeline_id', pipelineId);
@@ -426,7 +489,7 @@ export async function executeMCPTool(
         const title = String(args.title || '').trim();
         const stageId = String(args.stage_id || '').trim();
         const value = Number(args.value) || 0;
-        const currency = String(args.currency || 'USD').trim();
+        const currency = String(args.currency || 'INR').trim();
 
         if (!contactId || !title || !stageId) {
           return {
@@ -465,6 +528,7 @@ export async function executeMCPTool(
             title,
             value,
             currency,
+            status: 'open',
           })
           .select('*')
           .single();
@@ -535,7 +599,12 @@ export async function executeMCPTool(
 
         const { data: chunks, error } = await kbQuery.limit(limit);
 
-        if (error) throw error;
+        if (error) {
+          // If embeddings search fails or table is empty, gracefully return empty results
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ results: [], count: 0 }, null, 2) }],
+          };
+        }
 
         return {
           content: [
@@ -562,11 +631,22 @@ export async function executeMCPTool(
             };
           }
 
+          let agentId = userId;
+          if (!agentId) {
+            const { data: prof } = await db
+              .from('profiles')
+              .select('user_id')
+              .eq('account_id', accountId)
+              .limit(1)
+              .maybeSingle();
+            agentId = prof?.user_id || null;
+          }
+
           const { data, error } = await db
             .from('action_items')
             .insert({
               account_id: accountId,
-              agent_id: userId || (await db.from('profiles').select('user_id').eq('account_id', accountId).limit(1).single()).data?.user_id,
+              agent_id: agentId,
               title,
               target_date: args.target_date || new Date().toISOString().split('T')[0],
               contact_id: args.contact_id || null,
@@ -620,7 +700,7 @@ export async function executeMCPTool(
 
       default:
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool name: ${call.name}` }) }],
+          content: [{ type: 'text', text: JSON.stringify({ error: `Tool not found: ${call.name}` }) }],
           isError: true,
         };
     }
