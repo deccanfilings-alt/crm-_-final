@@ -39,6 +39,7 @@ export const SETTINGS_SECTIONS = [
   'api-keys',
   'canned',
   'backups',
+  'quotations',
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -68,6 +69,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   'api-keys': { id: 'api-keys', label: 'Agent Connectors & API', icon: Bot, group: 'workspace' },
   canned: { id: 'canned', label: 'Canned Responses', icon: MessageSquareDashed, group: 'workspace' },
   backups: { id: 'backups', label: 'Data & Backups', icon: Database, group: 'workspace' },
+  quotations: { id: 'quotations', label: 'Quotations & Billing', icon: FileText, group: 'workspace' },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [
