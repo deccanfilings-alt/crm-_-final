@@ -423,6 +423,15 @@ export async function sendTemplateMessage(
     messageParams,
     contextMessageId,
   } = args
+
+  // 6e. Empty-value guard: throw if any body variable is empty
+  const bodyValues = messageParams?.body ?? params ?? []
+  bodyValues.forEach((v, i) => {
+    if (String(v ?? '').trim() === '') {
+      throw new Error(`Template variable {{${i + 1}}} is empty, so the message was not sent.`)
+    }
+  })
+
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
   const templatePayload: Record<string, unknown> = {

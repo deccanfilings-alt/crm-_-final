@@ -29,6 +29,21 @@ describe("validateStepsForActivation", () => {
     expect(issues).toEqual([]);
   });
 
+  it("flags empty template variables", () => {
+    const issues = validateStepsForActivation([
+      {
+        step_type: "send_template",
+        step_config: {
+          template_name: "welcome",
+          variables: { "1": "Alice", "2": "   " },
+        },
+      },
+    ]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].path).toBe("steps[0].variables.2");
+    expect(issues[0].message).toBe("template variable {{2}} is empty");
+  });
+
   it("flags every required field that is missing", () => {
     const issues = validateStepsForActivation([
       { step_type: "send_message", step_config: { text: "  " } },

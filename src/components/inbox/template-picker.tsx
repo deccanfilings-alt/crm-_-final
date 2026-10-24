@@ -1,5 +1,7 @@
 "use client";
 
+import { cleanDisplayName } from '@/lib/contacts/display-name';
+
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { MessageTemplate } from "@/types";
@@ -25,6 +27,12 @@ import {
   extractTemplateVariables,
   type TemplateVariable,
 } from "@/lib/whatsapp/template-validators";
+
+function isUnusualVariableValue(val: string): boolean {
+  const trimmed = val.trim();
+  if (!trimmed) return false;
+  return trimmed.length <= 2 || /^\d+$/.test(trimmed);
+}
 
 export interface TemplateSendValues {
   body: string[];
@@ -165,12 +173,13 @@ export function TemplatePicker({
       return;
     }
     setSelected(template);
+    const cleanedName = cleanDisplayName(contactName, "");
     const initialParams = slots.bodyVars.map((v) => {
       if (
-        contactName &&
+        cleanedName &&
         (v.raw.toLowerCase().includes("name") || v.raw === "1")
       ) {
-        return contactName;
+        return cleanedName;
       }
       return "";
     });
@@ -179,8 +188,25 @@ export function TemplatePicker({
     setButtonParams({});
   }
 
+  const slots = useMemo(
+    () => (selected ? collectVariableSlots(selected) : null),
+    [selected],
+  );
+
   function confirm() {
     if (!selected) return;
+    if (slots) {
+      for (let i = 0; i < slots.bodyVars.length; i++) {
+        const val = params[i] ?? "";
+        if (isUnusualVariableValue(val)) {
+          const raw = slots.bodyVars[i].raw;
+          const proceed = window.confirm(
+            `Variable {{${raw}}} is "${val}". Send anyway?`
+          );
+          if (!proceed) return;
+        }
+      }
+    }
     const values: TemplateSendValues = { body: params };
     if (headerText.trim()) values.headerText = headerText.trim();
     if (Object.keys(buttonParams).length > 0) {
@@ -191,11 +217,6 @@ export function TemplatePicker({
     onSelect(selected, values);
     handleOpenChange(false);
   }
-
-  const slots = useMemo(
-    () => (selected ? collectVariableSlots(selected) : null),
-    [selected],
-  );
   const canConfirm =
     !!selected &&
     !!slots &&
@@ -293,21 +314,30 @@ export function TemplatePicker({
                 />
               </div>
             )}
-            {slots?.bodyVars.map((v, i) => (
-              <div key={v.raw} className="space-y-1">
-                <Label className="text-xs text-popover-foreground">{`Body {{${v.raw}}}`}</Label>
-                <Input
-                  value={params[i] ?? ""}
-                  onChange={(e) => {
-                    const next = [...params];
-                    next[i] = e.target.value;
-                    setParams(next);
-                  }}
-                  placeholder={`Value for {{${v.raw}}}`}
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-            ))}
+            {slots?.bodyVars.map((v, i) => {
+              const val = params[i] ?? "";
+              const showWarn = isUnusualVariableValue(val);
+              return (
+                <div key={v.raw} className="space-y-1">
+                  <Label className="text-xs text-popover-foreground">{`Body {{${v.raw}}}`}</Label>
+                  <Input
+                    value={val}
+                    onChange={(e) => {
+                      const next = [...params];
+                      next[i] = e.target.value;
+                      setParams(next);
+                    }}
+                    placeholder={`Value for {{${v.raw}}}`}
+                    className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                  />
+                  {showWarn && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      Looks unusual. Check before sending.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
             {slots?.urlButtonSlots.map((slot) => (
               <div key={slot.index} className="space-y-1">
                 <Label className="text-xs text-popover-foreground">

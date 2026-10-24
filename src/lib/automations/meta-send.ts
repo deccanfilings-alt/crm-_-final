@@ -1,3 +1,4 @@
+import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
@@ -70,7 +71,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   // new tenancy column.
   const { data: contact, error: contactErr } = await db
     .from('contacts')
-    .select('id, phone')
+    .select('id, phone, opted_out_marketing')
     .eq('id', input.contactId)
     .eq('account_id', input.accountId)
     .maybeSingle()
@@ -94,6 +95,28 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
 
   const accessToken = decrypt(config.access_token)
 
+  let templateRow: any = null
+  if (input.kind === 'template') {
+    const { data: tData } = await db
+      .from('message_templates')
+      .select('*')
+      .eq('account_id', input.accountId)
+      .eq('name', input.templateName)
+      .eq('language', input.language || 'en_US')
+      .maybeSingle()
+
+    if (tData && isMessageTemplate(tData)) {
+      templateRow = tData
+    }
+
+    if (
+      templateRow?.category?.toLowerCase() === 'marketing' &&
+      contact.opted_out_marketing
+    ) {
+      throw new Error('contact opted out of marketing messages')
+    }
+  }
+
   const attempt = async (phone: string): Promise<string> => {
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
@@ -102,6 +125,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         to: phone,
         templateName: input.templateName,
         language: input.language,
+        template: templateRow ?? undefined,
         params: input.params,
       })
       return r.messageId

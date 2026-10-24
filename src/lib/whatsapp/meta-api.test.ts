@@ -3,6 +3,7 @@ import {
   INTERACTIVE_LIMITS,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendTemplateMessage,
 } from "./meta-api";
 
 // All assertions in this file run BEFORE the network call. We stub fetch
@@ -265,5 +266,25 @@ describe("sendInteractiveList — validation", () => {
         },
       },
     });
+  });
+});
+
+describe("sendTemplateMessage — empty-value guard", () => {
+  it("throws on an empty value without calling fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      sendTemplateMessage({
+        phoneNumberId: "phone-1",
+        accessToken: "token-1",
+        to: "919876543210",
+        templateName: "order_update",
+        params: ["Alice", "   "],
+      })
+    ).rejects.toThrow("Template variable {{2}} is empty, so the message was not sent.");
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

@@ -1,3 +1,4 @@
+import { loadPlaceholderContact, resolveContactPlaceholders } from './contact-placeholders';
 import {
   Automation,
   AutomationLogStepResult,
@@ -347,7 +348,11 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'send_message': {
       const cfg = step.step_config as SendMessageStepConfig
       if (!args.contactId) throw new Error('send_message needs a contact')
-      const text = interpolate(cfg.text, args)
+      let contactData = null
+      if (cfg.text && cfg.text.includes('{{contact.')) {
+        contactData = await loadPlaceholderContact(db, args.automation.account_id, args.contactId)
+      }
+      const text = interpolate(resolveContactPlaceholders(cfg.text, contactData), args)
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
       const { whatsapp_message_id } = await engineSendText({
@@ -365,6 +370,13 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('send_template needs a contact')
       if (!cfg.template_name) throw new Error('send_template needs template_name')
       const conversationId = await resolveConversationId(args)
+
+      let contactData = null
+      const rawValues = cfg.variables ? Object.values(cfg.variables) : []
+      if (rawValues.some((v) => typeof v === 'string' && v.includes('{{contact.'))) {
+        contactData = await loadPlaceholderContact(db, args.automation.account_id, args.contactId)
+      }
+
       // Meta templates use positional {{1}}, {{2}}, … placeholders, so
       // we MUST emit params in strict numeric order. Lexicographic sort
       // of "1", "2", …, "10" yields "1", "10", "2", … which silently
@@ -381,7 +393,10 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
               if (bNum) return 1
               return a.localeCompare(b)
             })
-            .map((k) => String(cfg.variables![k]))
+            .map((k) => {
+              const raw = String(cfg.variables![k] ?? '')
+              return interpolate(resolveContactPlaceholders(raw, contactData), args)
+            })
         : []
       const { whatsapp_message_id } = await engineSendTemplate({
         accountId: args.automation.account_id,

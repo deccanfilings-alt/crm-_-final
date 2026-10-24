@@ -1,5 +1,7 @@
 "use client"
 
+import { extractTemplateVariables } from '@/lib/whatsapp/template-validators'
+
 import {
   createContext,
   useContext,
@@ -150,7 +152,7 @@ export function blankConfig(type: AutomationStepType): Record<string, unknown> {
     case "send_message":
       return { text: "" }
     case "send_template":
-      return { template_name: "", language: "en_US" }
+      return { template_name: "", language: "en_US", variables: {} }
     case "add_tag":
     case "remove_tag":
       return { tag_id: "" }
@@ -399,22 +401,37 @@ function AgentSelect({
 function SendTemplateFields({
   templateName,
   language,
+  variables = {},
   onChange,
 }: {
   templateName: string
   language: string
-  onChange: (patch: { template_name: string; language: string }) => void
+  variables?: Record<string, string>
+  onChange: (patch: {
+    template_name: string
+    language: string
+    variables?: Record<string, string>
+  }) => void
 }) {
-  const { templates } = useResources()
+  const { templates, customFields } = useResources()
+  const matchedTemplate = templates.find(
+    (t) => t.name === templateName && (t.language ?? "en_US") === (language || "en_US")
+  )
+  const templateVars = matchedTemplate ? extractTemplateVariables(matchedTemplate.body_text) : []
 
   if (templates.length === 0) {
+    const lines = Object.entries(variables)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([, v]) => v)
+      .join('\n')
+
     return (
       <>
         <FieldBlock label="Template name">
           <Input
             value={templateName}
             onChange={(e) =>
-              onChange({ template_name: e.target.value, language })
+              onChange({ template_name: e.target.value, language, variables })
             }
             className="bg-muted text-foreground"
           />
@@ -423,11 +440,29 @@ function SendTemplateFields({
           <Input
             value={language}
             onChange={(e) =>
-              onChange({ template_name: templateName, language: e.target.value })
+              onChange({ template_name: templateName, language: e.target.value, variables })
             }
             className="bg-muted text-foreground"
           />
         </FieldBlock>
+        <FieldBlock label="Variables">
+          <Textarea
+            value={lines}
+            placeholder="Variable values, one per line, in order ({{1}}, {{2}}, …)"
+            onChange={(e) => {
+              const newVars: Record<string, string> = {}
+              const splitLines = e.target.value.split('\n')
+              splitLines.forEach((line, idx) => {
+                newVars[String(idx + 1)] = line
+              })
+              onChange({ template_name: templateName, language, variables: newVars })
+            }}
+            className="min-h-20 bg-muted text-foreground"
+          />
+        </FieldBlock>
+        <p className="text-xs text-muted-foreground mt-1">
+          {"Use {{contact.first_name}}, {{contact.name}}, {{contact.phone}}, {{contact.email}}, {{contact.company}} or {{contact.custom.Field name}}. Add a fallback after |, e.g. {{contact.first_name|there}}."}
+        </p>
       </>
     )
   }
@@ -441,31 +476,83 @@ function SendTemplateFields({
   )
 
   return (
-    <FieldBlock label="Template">
-      <select
-        value={current}
-        onChange={(e) => {
-          const [name, lang] = e.target.value.split("::")
-          onChange({ template_name: name ?? "", language: lang ?? "" })
-        }}
-        className={SELECT_CLASS}
-      >
-        <option value="">Select a template…</option>
-        {templates.map((t) => {
-          const lang = t.language ?? "en_US"
-          return (
-            <option key={t.id} value={toValue(t.name, lang)}>
-              {t.name} ({lang})
+    <>
+      <FieldBlock label="Template">
+        <select
+          value={current}
+          onChange={(e) => {
+            const [name, lang] = e.target.value.split("::")
+            onChange({ template_name: name ?? "", language: lang ?? "", variables: {} })
+          }}
+          className={SELECT_CLASS}
+        >
+          <option value="">Select a template…</option>
+          {templates.map((t) => {
+            const lang = t.language ?? "en_US"
+            return (
+              <option key={t.id} value={toValue(t.name, lang)}>
+                {t.name} ({lang})
+              </option>
+            )
+          })}
+          {current && !hasMatch && (
+            <option value={current}>
+              {templateName} ({language || "unknown"}) — not in approved list
             </option>
-          )
-        })}
-        {current && !hasMatch && (
-          <option value={current}>
-            {templateName} ({language || "unknown"}) — not in approved list
-          </option>
-        )}
-      </select>
-    </FieldBlock>
+          )}
+        </select>
+      </FieldBlock>
+
+      {templateVars.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Template Variables
+          </div>
+          {templateVars.map((v, idx) => {
+            const posKey = String(idx + 1)
+            const currentVal = variables[posKey] ?? ""
+            return (
+              <FieldBlock key={v.raw} label={`{{${v.raw}}}`}>
+                <Input
+                  value={currentVal}
+                  onChange={(e) => {
+                    const nextVars = { ...variables, [posKey]: e.target.value }
+                    onChange({ template_name: templateName, language, variables: nextVars })
+                  }}
+                  placeholder={`Value for {{${v.raw}}}`}
+                  className="bg-muted text-foreground"
+                />
+              </FieldBlock>
+            )
+          })}
+          <p className="text-xs text-muted-foreground">
+            {"Use {{contact.first_name}}, {{contact.name}}, {{contact.phone}}, {{contact.email}}, {{contact.company}} or {{contact.custom.Field name}}. Add a fallback after |, e.g. {{contact.first_name|there}}."}
+          </p>
+          {customFields && customFields.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-1">
+              {customFields.map((cf) => (
+                <button
+                  key={cf.id}
+                  type="button"
+                  onClick={() => {
+                    const targetKey = String(
+                      templateVars.findIndex((_, i) => !variables[String(i + 1)]) + 1 ||
+                        templateVars.length
+                    )
+                    const placeholder = `{{contact.custom.${cf.field_name}}}`
+                    const nextVars = { ...variables, [targetKey]: placeholder }
+                    onChange({ template_name: templateName, language, variables: nextVars })
+                  }}
+                  className="text-[11px] px-2 py-0.5 rounded bg-secondary hover:bg-secondary/80 text-secondary-foreground"
+                >
+                  +{cf.field_name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -1066,6 +1153,7 @@ export function StepEditor({
         <SendTemplateFields
           templateName={(cfg.template_name as string) ?? ""}
           language={(cfg.language as string) ?? ""}
+          variables={(cfg.variables as Record<string, string>) ?? {}}
           onChange={(patch) => set(patch)}
         />
       )

@@ -62,6 +62,16 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       if (!nonEmpty(c.template_name)) {
         issues.push({ path: `${path}.template_name`, message: 'template name is required' })
       }
+      if (c.variables && typeof c.variables === 'object') {
+        for (const [key, val] of Object.entries(c.variables)) {
+          if (!nonEmpty(val)) {
+            issues.push({
+              path: `${path}.variables.${key}`,
+              message: `template variable {{${key}}} is empty`,
+            })
+          }
+        }
+      }
       break
     case 'add_tag':
     case 'remove_tag':
