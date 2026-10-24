@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { authenticateAgentRequest } from '@/lib/auth/agent-auth';
 import { WACRM_MCP_TOOLS } from '@/lib/mcp/tools';
 import { executeMCPTool } from '@/lib/mcp/handlers';
@@ -19,16 +19,17 @@ export async function OPTIONS() {
 
 export async function GET(req: Request) {
   const auth = await authenticateAgentRequest(req);
-  if (!auth.success) {
-    return NextResponse.json(
-      { error: auth.error || 'Unauthorized' },
-      { status: auth.status || 401, headers: CORS_HEADERS }
-    );
-  }
 
   // Check if client is requesting Server-Sent Events (SSE)
   const acceptHeader = req.headers.get('accept') || '';
   if (acceptHeader.includes('text/event-stream')) {
+    if (!auth.success) {
+      return NextResponse.json(
+        { error: auth.error || 'Unauthorized' },
+        { status: auth.status || 401, headers: CORS_HEADERS }
+      );
+    }
+
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
@@ -53,15 +54,16 @@ export async function GET(req: Request) {
     });
   }
 
-  // Standard JSON status
+  // Standard JSON status & health probe (allows Claude.ai connector check to succeed)
   return NextResponse.json(
     {
       name: 'wacrm-mcp',
       version: '1.0.0',
-      description: 'WACRM Model Context Protocol (MCP) Server for Claude Code & Agentic Platforms',
+      description: 'WACRM Model Context Protocol (MCP) Server for Claude & Agentic Platforms',
       status: 'ready',
-      account_id: auth.account_id,
-      key_name: auth.key_name,
+      authenticated: auth.success,
+      account_id: auth.account_id || null,
+      key_name: auth.key_name || null,
       tools_count: WACRM_MCP_TOOLS.length,
     },
     { headers: CORS_HEADERS }
@@ -174,7 +176,11 @@ async function handleJsonRpcMessage(
       };
     }
 
-    const result = await executeMCPTool(accountId, userId, { name, arguments: toolArgs });
+    const result = await executeMCPTool(accountId, userId, {
+      name,
+      arguments: toolArgs || {},
+    });
+
     return {
       jsonrpc: '2.0',
       id,
