@@ -245,6 +245,26 @@ export function ContactDetailView({
     setSavingDetails(false);
   }
 
+  async function toggleMarketingOptOut() {
+    if (!contactId || !contact) return;
+    const nextVal = !contact.opted_out_marketing;
+    const { error } = await supabase
+      .from('contacts')
+      .update({
+        opted_out_marketing: nextVal,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', contactId);
+
+    if (error) {
+      toast.error('Failed to update marketing preference');
+    } else {
+      toast.success(nextVal ? 'Marketing messages stopped' : 'Marketing messages allowed');
+      fetchContact();
+      onUpdated();
+    }
+  }
+
   async function toggleTag(tagId: string) {
     if (!contactId) return;
     setSavingTags(true);
@@ -383,9 +403,16 @@ export function ContactDetailView({
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <SheetTitle className="text-popover-foreground truncate">
-                    {contact.name || 'Unknown'}
-                  </SheetTitle>
+                  <div className="flex items-center gap-2">
+                    <SheetTitle className="text-popover-foreground truncate">
+                      {contact.name || 'Unknown'}
+                    </SheetTitle>
+                    {contact.opted_out_marketing && (
+                      <Badge variant="secondary" className="text-xs bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                        Opted out of marketing
+                      </Badge>
+                    )}
+                  </div>
                   <SheetDescription className="text-muted-foreground text-xs mt-0.5">
                     Contact details
                   </SheetDescription>
@@ -430,6 +457,9 @@ export function ContactDetailView({
                       <DropdownMenuItem onClick={() => setMergeModalOpen(true)}>
                         <Combine className="size-4 mr-2" />
                         Merge Contact
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={toggleMarketingOptOut}>
+                        {contact.opted_out_marketing ? 'Allow marketing messages' : 'Stop marketing messages'}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

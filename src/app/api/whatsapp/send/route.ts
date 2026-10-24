@@ -365,6 +365,18 @@ export async function POST(request: Request) {
             )
           }
           templateRow = data ?? null
+          if (
+            templateRow?.category?.toLowerCase() === 'marketing' &&
+            contact?.opted_out_marketing
+          ) {
+            return NextResponse.json(
+              {
+                error:
+                  'This contact has opted out of marketing messages. Use a Utility template or a normal reply.',
+              },
+              { status: 400 },
+            )
+          }
         }
 
         const attempt = async (phone: string): Promise<string> => {

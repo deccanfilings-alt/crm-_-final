@@ -6,11 +6,13 @@ export interface ClassificationResult {
   message: string;
   details?: string;
   href?: string;
+  optOut?: boolean;
   raw?: unknown;
 }
 
 const RETRY_CODES = new Set([1, 2, 4, 80007, 130429, 131053, 131056]);
-const DEFER_CODES = new Set([131049, 131050]);
+const OPT_OUT_CODES = new Set([131050]);
+const DEFER_CODES = new Set([131049]);
 const ABORT_CODES = new Set([131031, 131042, 131045, 131048, 132015, 132016]);
 
 /**
@@ -75,6 +77,9 @@ export function classifyMetaError(error: unknown, httpStatus?: number): Classifi
 
   // 1. Code-specific rules ALWAYS win over HTTP status
   if (numCode !== undefined) {
+    if (OPT_OUT_CODES.has(numCode)) {
+      return { disposition: 'fail', code: numCode, optOut: true, message, details, href, raw };
+    }
     if (ABORT_CODES.has(numCode)) {
       return { disposition: 'abort', code: numCode, message, details, href, raw };
     }

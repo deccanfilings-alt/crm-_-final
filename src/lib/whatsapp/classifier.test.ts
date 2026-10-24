@@ -20,13 +20,17 @@ describe('classifyMetaError', () => {
     expect(classifyMetaError({ error: { code: 4 } }).disposition).toBe('retry');
   });
 
-  it('assigns disposition "defer" for per-person marketing cap codes (131049, 131050)', () => {
+  it('assigns disposition "defer" for per-person marketing cap codes (131049)', () => {
     const r1 = classifyMetaError({ error: { code: 131049, message: 'Marketing cap' } }, 400);
     expect(r1.disposition).toBe('defer');
     expect(r1.code).toBe(131049);
+  });
 
-    const r2 = classifyMetaError({ error: { code: 131050 } });
-    expect(r2.disposition).toBe('defer');
+  it('assigns disposition "fail" with optOut: true for marketing opt-out code (131050)', () => {
+    const r2 = classifyMetaError({ error: { code: 131050, message: 'User stopped marketing messages' } });
+    expect(r2.disposition).toBe('fail');
+    expect(r2.code).toBe(131050);
+    expect(r2.optOut).toBe(true);
   });
 
   it('assigns disposition "abort" for account or template level blocks (131031, 131042, 131045, 131048, 132015, 132016)', () => {

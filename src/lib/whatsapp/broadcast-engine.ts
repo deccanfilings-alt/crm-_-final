@@ -1,3 +1,4 @@
+import { setMarketingOptOut } from '@/lib/contacts/opt-out';
 ﻿import { classifyMetaError, ClassificationResult } from './classifier';
 import { SerialRateLimiter, calculateBackoffDelay } from './limiter';
 import { validateBroadcastPhone } from './phone-utils';
@@ -390,6 +391,10 @@ export async function processBroadcast(
       } catch (err: any) {
         const httpStatus = err?.status || err?.rawStatus;
         const classified = classifyMetaError(err, httpStatus);
+
+        if (classified.optOut && recipient.contact_id) {
+          await setMarketingOptOut(supabaseAdmin, recipient.contact_id, true);
+        }
 
         const retryAfterHeader = err?.headers?.get?.('retry-after') || err?.retryAfter;
 

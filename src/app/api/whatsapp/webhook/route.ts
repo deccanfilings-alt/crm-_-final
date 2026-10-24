@@ -5,6 +5,8 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { classifyMetaError } from '@/lib/whatsapp/classifier'
+import { parseOptKeyword, setMarketingOptOut, findContactIdForWamid } from '@/lib/contacts/opt-out'
+import { engineSendText } from '@/lib/flows/meta-send'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
@@ -47,6 +49,7 @@ interface WhatsAppMessage {
   timestamp: string
   type: string
   text?: { body: string }
+  button?: { text?: string; payload?: string }
   image?: { id: string; mime_type: string; caption?: string }
   video?: { id: string; mime_type: string; caption?: string }
   document?: { id: string; mime_type: string; filename?: string; caption?: string }
@@ -398,6 +401,17 @@ async function handleStatusUpdate(status: {
     }
   }
 
+  // Task 4: Mark contact opted-out if Meta returned marketing opt-out error (131050)
+  if (status.status === 'failed' && status.errors && status.errors.length > 0) {
+    const classified = classifyMetaError(status.errors[0])
+    if (classified.optOut) {
+      const contactId = await findContactIdForWamid(supabaseAdmin(), status.id)
+      if (contactId) {
+        await setMarketingOptOut(supabaseAdmin(), contactId, true)
+      }
+    }
+  }
+
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id
   //    (added in migration 003). The aggregate trigger on
   //    broadcast_recipients re-derives the parent broadcast's
@@ -736,6 +750,30 @@ async function processMessage(
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
+  // Task 4: Marketing opt-out keywords ("STOP", "START", button replies like "Stop promotions")
+  if (message.type === 'text' || message.type === 'button') {
+    const opt = parseOptKeyword(contentText)
+    if (opt) {
+      await setMarketingOptOut(supabaseAdmin(), contactRecord.id, opt === 'out')
+      const confirmationText =
+        opt === 'out'
+          ? "You won't receive promotional messages from Deccan Filings anymore. Reply START to subscribe again."
+          : "You're subscribed to updates from Deccan Filings again. Reply STOP anytime to unsubscribe."
+      try {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId: conversation.id,
+          contactId: contactRecord.id,
+          text: confirmationText,
+        })
+      } catch (confirmErr) {
+        console.error('[webhook] Failed to send opt-out confirmation message:', confirmErr)
+      }
+      return
+    }
+  }
+
   // ============================================================
   // Flow runner dispatch.
   //
@@ -988,6 +1026,9 @@ async function parseMessageContent(
 
     case 'reaction':
       return { ...empty, contentText: message.reaction?.emoji || null }
+
+    case 'button':
+      return { ...empty, contentText: message.button?.text || message.button?.payload || '[Button reply]' }
 
     case 'interactive': {
       // The customer tapped a reply button or a list row on a message
