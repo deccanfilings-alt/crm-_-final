@@ -74,7 +74,7 @@ export async function PATCH(
     // Check existing quotation
     const { data: existing, error: fetchErr } = await supabase
       .from('quotations')
-      .select('id, status')
+      .select('*')
       .eq('id', id)
       .eq('account_id', profile.account_id)
       .single();
