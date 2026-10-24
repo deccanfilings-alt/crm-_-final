@@ -33,6 +33,7 @@
  */
 
 import { supabaseAdmin } from "./admin-client";
+import { notifyHandoff } from "./handoff-notify";
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -481,6 +482,12 @@ async function executeHandoff(
       .from("conversations")
       .update(convUpdate)
       .eq("id", run.conversation_id);
+    await notifyHandoff(db, {
+      conversationId: run.conversation_id,
+      assignedTo: cfg.assign_to ?? null,
+      note: cfg.note ?? null,
+      reason: 'handoff_node',
+    });
   }
   await logEvent(db, run.id, "handoff", node.node_key, {
     note: cfg.note ?? null,
@@ -1401,6 +1408,10 @@ async function handleReplyForActiveRun(
         .from("conversations")
         .update({ status: "pending", updated_at: new Date().toISOString() })
         .eq("id", run.conversation_id);
+      await notifyHandoff(db, {
+        conversationId: run.conversation_id,
+        reason: 'fallback_exhausted',
+      });
     }
     await logEvent(db, run.id, "handoff", run.current_node_key, {
       reason: "fallback_exhausted",
