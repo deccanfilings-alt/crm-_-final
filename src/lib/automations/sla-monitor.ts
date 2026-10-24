@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './admin-client'
+﻿import { supabaseAdmin } from './admin-client'
 import { runAutomationsForTrigger } from './engine'
 
 export interface SlaEvaluationResult {
@@ -8,18 +8,23 @@ export interface SlaEvaluationResult {
 }
 
 /**
- * Pure evaluation function checking if an open conversation has breached its SLA threshold.
+ * Pure evaluation function checking if an open or pending conversation has breached its SLA threshold.
  */
 export function evaluateConversationSla(conversation: {
   status?: string | null
   last_customer_message_at?: string | Date | null
-  last_message_at?: string | Date | null
+  last_agent_message_at?: string | Date | null
   sla_breached_at?: string | Date | null
   sla_threshold_minutes?: number | null
 }): SlaEvaluationResult {
   const threshold = conversation.sla_threshold_minutes || 30
 
-  if (conversation.status !== 'open' || !conversation.last_customer_message_at) {
+  // Only open and pending are active. Any other status → not breached.
+  if (
+    !conversation.status ||
+    !['open', 'pending'].includes(conversation.status) ||
+    !conversation.last_customer_message_at
+  ) {
     return { isBreached: false, elapsedMinutes: 0, thresholdMinutes: threshold }
   }
 
@@ -29,13 +34,13 @@ export function evaluateConversationSla(conversation: {
   }
 
   const custTime = new Date(conversation.last_customer_message_at).getTime()
-  const lastMsgTime = conversation.last_message_at
-    ? new Date(conversation.last_message_at).getTime()
-    : 0
 
-  // If the last message in conversation is after the last customer message, agent or bot has replied
-  if (lastMsgTime > custTime) {
-    return { isBreached: false, elapsedMinutes: 0, thresholdMinutes: threshold }
+  // Not breached if last_agent_message_at is set and is >= last_customer_message_at
+  if (conversation.last_agent_message_at) {
+    const agentTime = new Date(conversation.last_agent_message_at).getTime()
+    if (agentTime >= custTime) {
+      return { isBreached: false, elapsedMinutes: 0, thresholdMinutes: threshold }
+    }
   }
 
   const elapsedMs = Date.now() - custTime
@@ -49,7 +54,7 @@ export function evaluateConversationSla(conversation: {
 }
 
 /**
- * Sweeps open conversations in the specified account (or all accounts)
+ * Sweeps open and pending conversations in the specified account (or all accounts)
  * and triggers SLA breach automations for any conversations exceeding thresholds.
  */
 export async function checkAndTriggerSlaBreaches(targetAccountId?: string): Promise<{
@@ -61,8 +66,8 @@ export async function checkAndTriggerSlaBreaches(targetAccountId?: string): Prom
 
   let query = db
     .from('conversations')
-    .select('id, account_id, contact_id, status, last_customer_message_at, last_message_at, sla_breached_at, sla_threshold_minutes')
-    .eq('status', 'open')
+    .select('id, account_id, contact_id, status, last_customer_message_at, last_agent_message_at, sla_breached_at, sla_threshold_minutes')
+    .in('status', ['open', 'pending'])
     .not('last_customer_message_at', 'is', null)
     .is('sla_breached_at', null)
 

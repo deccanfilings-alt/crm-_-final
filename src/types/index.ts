@@ -164,6 +164,7 @@ export interface Conversation {
   last_message_at?: string;
   last_customer_message_at?: string | null;
   sla_breached_at?: string | null;
+  last_agent_message_at?: string | null;
   sla_threshold_minutes?: number | null;
   unread_count: number;
   created_at: string;

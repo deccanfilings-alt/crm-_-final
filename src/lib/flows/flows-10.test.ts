@@ -211,7 +211,7 @@ describe('Automations & Flows 10/10 Enterprise Features', () => {
       const conv = {
         status: 'open',
         last_customer_message_at: thirtyFiveMinsAgo,
-        last_message_at: fortyMinsAgo, // agent has not messaged since customer
+        last_agent_message_at: fortyMinsAgo, // agent has not messaged since customer
         sla_breached_at: null,
         sla_threshold_minutes: 30,
       }
@@ -228,7 +228,7 @@ describe('Automations & Flows 10/10 Enterprise Features', () => {
       const conv = {
         status: 'open',
         last_customer_message_at: thirtyFiveMinsAgo,
-        last_message_at: tenMinsAgo, // agent replied 10 mins ago!
+        last_agent_message_at: tenMinsAgo, // agent replied 10 mins ago!
         sla_breached_at: null,
         sla_threshold_minutes: 30,
       }
@@ -243,8 +243,55 @@ describe('Automations & Flows 10/10 Enterprise Features', () => {
       const conv = {
         status: 'open',
         last_customer_message_at: thirtyFiveMinsAgo,
-        last_message_at: thirtyFiveMinsAgo,
+        last_agent_message_at: thirtyFiveMinsAgo,
         sla_breached_at: new Date().toISOString(), // already breached
+        sla_threshold_minutes: 30,
+      }
+
+      const evalResult = evaluateConversationSla(conv)
+      expect(evalResult.isBreached).toBe(false)
+    })
+
+    it('detects a breach even if a bot replied when no person has replied', () => {
+      const thirtyFiveMinsAgo = new Date(Date.now() - 35 * 60 * 1000).toISOString()
+
+      const conv = {
+        status: 'open',
+        last_customer_message_at: thirtyFiveMinsAgo,
+        last_agent_message_at: null, // bot replied, but no human agent replied
+        sla_breached_at: null,
+        sla_threshold_minutes: 30,
+      }
+
+      const evalResult = evaluateConversationSla(conv)
+      expect(evalResult.isBreached).toBe(true)
+      expect(evalResult.elapsedMinutes).toBeGreaterThanOrEqual(35)
+    })
+
+    it('detects a breach for pending threads when no human replied', () => {
+      const thirtyFiveMinsAgo = new Date(Date.now() - 35 * 60 * 1000).toISOString()
+
+      const conv = {
+        status: 'pending',
+        last_customer_message_at: thirtyFiveMinsAgo,
+        last_agent_message_at: null,
+        sla_breached_at: null,
+        sla_threshold_minutes: 30,
+      }
+
+      const evalResult = evaluateConversationSla(conv)
+      expect(evalResult.isBreached).toBe(true)
+      expect(evalResult.elapsedMinutes).toBeGreaterThanOrEqual(35)
+    })
+
+    it('does not breach when status is closed', () => {
+      const thirtyFiveMinsAgo = new Date(Date.now() - 35 * 60 * 1000).toISOString()
+
+      const conv = {
+        status: 'closed',
+        last_customer_message_at: thirtyFiveMinsAgo,
+        last_agent_message_at: null,
+        sla_breached_at: null,
         sla_threshold_minutes: 30,
       }
 
