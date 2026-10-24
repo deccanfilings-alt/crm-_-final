@@ -51,6 +51,7 @@ export function GlobalNotificationProvider({ children }: { children: React.React
   const [desktopPermission, setDesktopPermission] = useState<NotificationPermission | "unsupported">("default");
   
   const processedMessageIdsRef = useRef<Set<string>>(new Set());
+  const assignedAgentsRef = useRef<Map<string, string | null>>(new Map());
   const channelsRef = useRef<RealtimeChannel[]>([]);
 
   // Check desktop notification permission on client mount
@@ -288,6 +289,20 @@ export function GlobalNotificationProvider({ children }: { children: React.React
       )
       .subscribe();
 
+    // Seed assigned agents map so we don't alert on existing assignments or subsequent updates
+    supabase
+      .from("conversations")
+      .select("id, assigned_agent_id")
+      .eq("account_id", accountId)
+      .eq("assigned_agent_id", user.id)
+      .then(({ data }) => {
+        if (data) {
+          data.forEach((c) => {
+            assignedAgentsRef.current.set(c.id, c.assigned_agent_id);
+          });
+        }
+      });
+
     // 4. Realtime Conversation Assignments stream
     const conversationsChannel = supabase
       .channel(`realtime:convs:${accountId}`)
@@ -301,11 +316,15 @@ export function GlobalNotificationProvider({ children }: { children: React.React
         },
         (payload) => {
           const newConv = payload.new as any;
-          const oldConv = payload.old as any;
+          if (!newConv || !newConv.id) return;
+
+          const prevAssigned = assignedAgentsRef.current.get(newConv.id);
+          const newAssigned = newConv.assigned_agent_id ?? null;
+          assignedAgentsRef.current.set(newConv.id, newAssigned);
+
           if (
-            newConv &&
-            newConv.assigned_agent_id === user.id &&
-            oldConv?.assigned_agent_id !== user.id
+            newAssigned === user.id &&
+            prevAssigned !== user.id
           ) {
             dispatchAlert({
               title: "💬 New Chat Assigned",
