@@ -1,4 +1,4 @@
-export type FailureDisposition = 'retry' | 'defer' | 'fail' | 'abort';
+﻿export type FailureDisposition = 'retry' | 'defer' | 'fail' | 'abort';
 
 export interface ClassificationResult {
   disposition: FailureDisposition;
@@ -28,7 +28,7 @@ export function classifyMetaError(error: unknown, httpStatus?: number): Classifi
   let details: string | undefined;
   let href: string | undefined;
   let status: number | undefined = httpStatus;
-  let raw: unknown = error;
+  const raw: unknown = error;
 
   if (error && typeof error === 'object') {
     const errObj = error as Record<string, unknown>;

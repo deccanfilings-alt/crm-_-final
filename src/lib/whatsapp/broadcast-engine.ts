@@ -1,4 +1,4 @@
-import { classifyMetaError, ClassificationResult } from './classifier';
+﻿import { classifyMetaError, ClassificationResult } from './classifier';
 import { SerialRateLimiter, calculateBackoffDelay } from './limiter';
 import { validateBroadcastPhone } from './phone-utils';
 import { sendTemplateMessage } from './meta-api';
@@ -219,7 +219,9 @@ export async function processBroadcast(
   const sendRate = parseFloat(process.env.WHATSAPP_SEND_RATE_PER_SEC || '2');
 
   const limiter = new SerialRateLimiter({ ratePerSec: sendRate });
-  let { count: uniqueCount, uniquePhones } = await getDailyUniqueRecipientCount(supabaseAdmin, accountId);
+  const initialDaily = await getDailyUniqueRecipientCount(supabaseAdmin, accountId);
+  let uniqueCount = initialDaily.count;
+  const uniquePhones = initialDaily.uniquePhones;
 
   let processedCount = 0;
   let sentCount = 0;

@@ -1,4 +1,4 @@
-import type { MCPToolDefinition } from './types';
+﻿import type { MCPToolDefinition } from './types';
 
 export const WACRM_MCP_TOOLS: MCPToolDefinition[] = [
   {
@@ -36,7 +36,7 @@ export const WACRM_MCP_TOOLS: MCPToolDefinition[] = [
   },
   {
     name: 'create_or_update_contact',
-    description: 'Create a new contact or update existing contact attributes (name, email, company, tags, custom fields) by phone number.',
+    description: 'Create a new contact or update existing contact attributes (name, email, company, tags, custom fields) by phone number. Tags are additive. Custom fields must already exist under Settings → Fields & Tags.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -59,11 +59,11 @@ export const WACRM_MCP_TOOLS: MCPToolDefinition[] = [
         tags: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Array of tag names to associate with this contact.',
+          description: 'Array of tag names to associate with this contact (additive).',
         },
         custom_fields: {
           type: 'object',
-          description: 'Key-value pairs of custom fields defined for your workspace.',
+          description: 'Key-value pairs of existing custom fields defined for your workspace.',
         },
       },
       required: ['phone'],
@@ -77,9 +77,9 @@ export const WACRM_MCP_TOOLS: MCPToolDefinition[] = [
       properties: {
         status: {
           type: 'string',
-          enum: ['open', 'pending', 'resolved', 'all'],
-          description: 'Filter by conversation status (default: open).',
-          default: 'open',
+          enum: ['open', 'pending', 'closed', 'resolved', 'all'],
+          description: 'Filter by conversation status: open, pending, closed (resolved is an alias for closed), or all (default: all).',
+          default: 'all',
         },
         channel: {
           type: 'string',
@@ -91,6 +91,11 @@ export const WACRM_MCP_TOOLS: MCPToolDefinition[] = [
           type: 'number',
           description: 'Number of conversations to retrieve (default 20, max 50).',
           default: 20,
+        },
+        offset: {
+          type: 'number',
+          description: 'Number of conversations to skip for pagination (default: 0).',
+          default: 0,
         },
       },
     },
@@ -180,7 +185,7 @@ export const WACRM_MCP_TOOLS: MCPToolDefinition[] = [
   },
   {
     name: 'list_deals',
-    description: 'List sales pipeline deals with deal values, stages, closing probability, and associated contacts.',
+    description: 'List sales pipeline deals with deal values, stages, and associated contacts.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -250,7 +255,7 @@ export const WACRM_MCP_TOOLS: MCPToolDefinition[] = [
   },
   {
     name: 'search_knowledge_base',
-    description: 'Perform semantic vector and keyword search across company Knowledge Bases and documentation.',
+    description: "Keyword search across this workspace's Knowledge Base chunks (matches any of the words).",
     inputSchema: {
       type: 'object',
       properties: {
