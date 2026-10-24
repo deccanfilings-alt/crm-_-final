@@ -1,224 +1,332 @@
 import type { Quotation, QuotationSettings } from '@/types';
-import { numberToWordsINR } from './amount-in-words';
 
 export function renderQuotationHtml(quote: Quotation, settings: QuotationSettings): string {
   const items = quote.items || [];
-  const currencySymbol = quote.currency === 'INR' ? '₹' : (quote.currency || '₹');
-  const amountWords = quote.currency === 'INR' ? numberToWordsINR(quote.total_amount) : '';
+  
+  // Format Date as DD-MM-YYYY
+  function formatDateDMY(dStr?: string | null): string {
+    if (!dStr) return '';
+    const d = new Date(dStr);
+    if (isNaN(d.getTime())) return dStr;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
 
-  const issueDateFormatted = quote.issue_date
-    ? new Date(quote.issue_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-    : '';
-  const validUntilFormatted = quote.valid_until
-    ? new Date(quote.valid_until).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-    : '15 Days from issue';
+  const billDate = formatDateDMY(quote.issue_date);
+  const currencyCode = quote.currency || 'INR';
 
-  const rows = items
-    .map(
-      (it, idx) => `
-      <tr>
-        <td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #64748b; font-size: 13px;">${idx + 1}</td>
-        <td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0;">
-          <div style="font-weight: 600; color: #0f172a; font-size: 14px;">${escapeHtml(it.title)}</div>
-          ${it.description ? `<div style="color: #64748b; font-size: 12px; margin-top: 2px;">${escapeHtml(it.description)}</div>` : ''}
+  function formatMoney(amount: number): string {
+    const val = Number(amount) || 0;
+    return `${currencyCode} ${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  const cgstAmount = Math.round(((quote.tax_amount || 0) / 2 + Number.EPSILON) * 100) / 100;
+  const sgstAmount = Math.round(((quote.tax_amount || 0) - cgstAmount + Number.EPSILON) * 100) / 100;
+
+  // UPI QR Code URL
+  const upiId = settings.upi_id || '';
+  const upiQr = settings.upi_qr_url || (upiId ? `https://quickchart.io/qr?text=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=${settings.company_name}&am=${quote.total_amount}&cu=${currencyCode}`)}&size=130` : null);
+
+  const tableRows = items.map((item, idx) => {
+    const gstRateStr = quote.tax_type === 'none' ? '0 %' : `${item.tax_rate || quote.tax_rate || 18} %`;
+    return `
+      <tr style="border-bottom: 1px solid #e5e7eb;">
+        <td style="padding: 10px 12px; text-align: center; color: #374151; font-size: 13px;">${idx + 1}</td>
+        <td style="padding: 10px 12px; color: #111827; font-size: 13px; font-weight: 500;">
+          ${escapeHtml(item.title)}
         </td>
-        <td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-size: 13px; color: #334155;">${it.quantity}</td>
-        <td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; font-size: 13px; color: #334155;">${currencySymbol}${it.unit_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-        <td style="padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 600; font-size: 14px; color: #0f172a;">${currencySymbol}${it.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+        <td style="padding: 10px 12px; color: #4b5563; font-size: 13px;">
+          ${item.description ? escapeHtml(item.description) : ''}
+        </td>
+        <td style="padding: 10px 12px; text-align: right; color: #111827; font-size: 13px;">
+          ${formatMoney(item.unit_price * item.quantity)}
+        </td>
+        <td style="padding: 10px 12px; text-align: center; color: #374151; font-size: 13px;">
+          ${gstRateStr}
+        </td>
+        <td style="padding: 10px 12px; text-align: right; font-weight: 600; color: #111827; font-size: 13px;">
+          ${formatMoney(item.total)}
+        </td>
       </tr>
-    `
-    )
-    .join('');
+    `;
+  }).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Quotation ${escapeHtml(quote.quote_number)} - ${escapeHtml(settings.company_name)}</title>
+  <title>QUOTATION - ${escapeHtml(quote.quote_number)}</title>
   <style>
     @page {
-      size: A4;
-      margin: 12mm 15mm;
+      size: A4 portrait;
+      margin: 15mm 15mm 20mm 15mm;
+    }
+    * {
+      box-sizing: border-box;
     }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: #0f172a;
+      font-family: Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #111827;
       background: #ffffff;
       margin: 0;
-      padding: 24px;
-      line-height: 1.5;
+      padding: 30px;
+      line-height: 1.45;
     }
     @media print {
-      body { padding: 0; }
-      .no-print { display: none !important; }
+      body {
+        padding: 0;
+      }
+      .no-print {
+        display: none !important;
+      }
     }
-    .badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+    table {
+      width: 100%;
+      border-collapse: collapse;
     }
-    .badge-accepted { background: #dcfce7; color: #15803d; }
-    .badge-sent { background: #e0f2fe; color: #0369a1; }
-    .badge-draft { background: #f1f5f9; color: #475569; }
   </style>
 </head>
 <body>
-  <!-- Print Action Bar -->
-  <div class="no-print" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 12px 18px; border-radius: 8px; border: 1px solid #e2e8f0;">
-    <div>
-      <span style="font-weight: 600; color: #1e293b;">Quotation Preview</span>
-      <span style="color: #64748b; margin-left: 8px;">${escapeHtml(quote.quote_number)}</span>
+  <!-- Print Controls -->
+  <div class="no-print" style="max-width: 800px; margin: 0 auto 20px auto; display: flex; justify-content: space-between; align-items: center; background: #f3f4f6; padding: 12px 18px; border-radius: 6px; border: 1px solid #d1d5db;">
+    <div style="font-weight: 600; font-size: 14px; color: #1f2937;">
+      WebLedger Standard Quotation (${escapeHtml(quote.quote_number)})
     </div>
-    <button onclick="window.print()" style="background: #0284c7; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer;">
-      Print / Save as PDF
+    <button onclick="window.print()" style="background: #111827; color: white; border: none; padding: 8px 18px; border-radius: 5px; font-weight: 600; font-size: 13px; cursor: pointer;">
+      Print / Save PDF
     </button>
   </div>
 
-  <div style="max-width: 800px; margin: 0 auto; background: white;">
-    <!-- Header -->
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 28px;">
+  <div style="max-width: 800px; margin: 0 auto; background: #ffffff;">
+    <!-- Top Header -->
+    <table style="margin-bottom: 15px;">
       <tr>
-        <td style="vertical-align: top; width: 60%;">
-          ${settings.company_logo_url ? `<img src="${escapeHtml(settings.company_logo_url)}" alt="Logo" style="max-height: 48px; margin-bottom: 8px;" />` : ''}
-          <div style="font-size: 20px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em;">${escapeHtml(settings.company_name)}</div>
-          ${settings.company_address ? `<div style="color: #475569; font-size: 13px; margin-top: 4px; white-space: pre-line;">${escapeHtml(settings.company_address)}</div>` : ''}
-          <div style="color: #64748b; font-size: 13px; margin-top: 4px;">
-            ${settings.company_phone ? `Phone: ${escapeHtml(settings.company_phone)} | ` : ''}
-            ${settings.company_email ? `Email: ${escapeHtml(settings.company_email)}` : ''}
-          </div>
-          ${settings.gstin ? `<div style="color: #0369a1; font-size: 13px; font-weight: 600; margin-top: 4px;">GSTIN: ${escapeHtml(settings.gstin)}</div>` : ''}
+        <td style="width: 70%; vertical-align: top;">
+          <h1 style="font-size: 24px; font-weight: 700; text-align: center; margin: 0 0 16px 0; color: #111827; letter-spacing: 0.05em;">
+            QUOTATION
+          </h1>
+          <table style="width: auto; font-size: 13px;">
+            <tr>
+              <td style="padding: 2px 0; font-weight: 600; color: #374151; width: 75px;">Bill No:</td>
+              <td style="padding: 2px 0; font-weight: 700; color: #111827;">${escapeHtml(quote.quote_number)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 2px 0; font-weight: 600; color: #374151;">Bill Date:</td>
+              <td style="padding: 2px 0; color: #111827;">${billDate}</td>
+            </tr>
+          </table>
         </td>
-        <td style="vertical-align: top; text-align: right; width: 40%;">
-          <div style="font-size: 24px; font-weight: 800; color: #0284c7; letter-spacing: 0.05em; text-transform: uppercase;">QUOTATION</div>
-          <div style="font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 4px;">${escapeHtml(quote.quote_number)}</div>
-          <div style="margin-top: 6px;">
-            <span class="badge ${quote.status === 'accepted' ? 'badge-accepted' : quote.status === 'sent' ? 'badge-sent' : 'badge-draft'}">${escapeHtml(quote.status)}</span>
-          </div>
-          <div style="font-size: 13px; color: #475569; margin-top: 8px;">
-            <div><strong>Date:</strong> ${issueDateFormatted}</div>
-            <div><strong>Valid Until:</strong> ${validUntilFormatted}</div>
-          </div>
+        <td style="width: 30%; vertical-align: top; text-align: right;">
+          ${settings.company_logo_url ? `
+            <img src="${escapeHtml(settings.company_logo_url)}" alt="Logo" style="max-height: 52px; object-fit: contain;" />
+          ` : `
+            <div style="font-weight: 800; font-size: 15px; color: #111827; line-height: 1.2;">
+              ${escapeHtml(settings.company_name)}
+            </div>
+            <div style="font-size: 9px; color: #6b7280; text-transform: uppercase; margin-top: 2px;">
+              One Stop For All Business Solutions
+            </div>
+          `}
         </td>
       </tr>
     </table>
 
-    <!-- Quotation For / Subject -->
-    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-      <table style="width: 100%; border-collapse: collapse;">
-        <tr>
-          <td style="vertical-align: top; width: 50%;">
-            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">QUOTATION FOR</div>
-            <div style="font-size: 15px; font-weight: 700; color: #0f172a;">${escapeHtml(quote.client_name)}</div>
-            ${quote.client_company ? `<div style="font-size: 13px; color: #334155; font-weight: 500;">${escapeHtml(quote.client_company)}</div>` : ''}
-            ${quote.client_phone ? `<div style="font-size: 13px; color: #64748b;">Phone: ${escapeHtml(quote.client_phone)}</div>` : ''}
-            ${quote.client_email ? `<div style="font-size: 13px; color: #64748b;">Email: ${escapeHtml(quote.client_email)}</div>` : ''}
-            ${quote.client_gstin ? `<div style="font-size: 13px; color: #0284c7; font-weight: 600;">GSTIN: ${escapeHtml(quote.client_gstin)}</div>` : ''}
-          </td>
-          <td style="vertical-align: top; width: 50%;">
-            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">SERVICE / SCOPE</div>
-            <div style="font-size: 14px; font-weight: 600; color: #0f172a;">${escapeHtml(quote.title)}</div>
-            ${quote.notes ? `<div style="font-size: 12px; color: #64748b; margin-top: 4px; white-space: pre-line;">${escapeHtml(quote.notes)}</div>` : ''}
-          </td>
-        </tr>
-      </table>
-    </div>
+    <!-- Black divider line -->
+    <div style="border-top: 2px solid #000000; margin-bottom: 16px;"></div>
 
-    <!-- Items Table -->
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
-      <thead>
-        <tr style="background: #0f172a; color: white;">
-          <th style="padding: 10px 12px; text-align: center; font-size: 12px; font-weight: 600; width: 5%;">#</th>
-          <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; width: 50%;">ITEM & DESCRIPTION</th>
-          <th style="padding: 10px 12px; text-align: center; font-size: 12px; font-weight: 600; width: 10%;">QTY</th>
-          <th style="padding: 10px 12px; text-align: right; font-size: 12px; font-weight: 600; width: 15%;">RATE</th>
-          <th style="padding: 10px 12px; text-align: right; font-size: 12px; font-weight: 600; width: 20%;">TOTAL</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows}
-      </tbody>
-    </table>
-
-    <!-- Totals & Payment Summary -->
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 28px;">
+    <!-- ISSUED BY & BILLED TO Columns -->
+    <table style="margin-bottom: 24px;">
       <tr>
-        <td style="vertical-align: top; width: 55%; padding-right: 20px;">
-          ${amountWords ? `
-            <div style="background: #f1f5f9; padding: 12px 14px; border-radius: 6px; font-size: 13px; color: #334155; margin-bottom: 16px;">
-              <strong style="color: #0f172a;">Amount in Words:</strong><br />${escapeHtml(amountWords)}
-            </div>
-          ` : ''}
-
-          <!-- Bank / UPI Details -->
-          ${(settings.bank_name || settings.upi_id) ? `
-            <div style="border: 1px dashed #cbd5e1; border-radius: 6px; padding: 14px; font-size: 12px; color: #475569;">
-              <div style="font-weight: 700; color: #0f172a; text-transform: uppercase; font-size: 11px; margin-bottom: 6px;">Payment Information</div>
-              ${settings.bank_name ? `<div><strong>Bank:</strong> ${escapeHtml(settings.bank_name)} | <strong>A/C:</strong> ${escapeHtml(settings.bank_account_no || '')}</div>` : ''}
-              ${settings.bank_ifsc ? `<div><strong>IFSC:</strong> ${escapeHtml(settings.bank_ifsc)} | <strong>Beneficiary:</strong> ${escapeHtml(settings.bank_beneficiary_name || settings.company_name)}</div>` : ''}
-              ${settings.upi_id ? `<div style="margin-top: 4px; color: #0284c7; font-weight: 600;">UPI ID: ${escapeHtml(settings.upi_id)}</div>` : ''}
-            </div>
-          ` : ''}
+        <!-- ISSUED BY -->
+        <td style="width: 50%; vertical-align: top; padding-right: 25px;">
+          <div style="font-weight: 700; font-size: 13px; text-transform: uppercase; color: #000000; border-bottom: 2px solid #000000; padding-bottom: 3px; margin-bottom: 8px;">
+            ISSUED BY
+          </div>
+          <table style="font-size: 12px; line-height: 1.5;">
+            <tr>
+              <td style="font-weight: 700; color: #111827; width: 85px; vertical-align: top;">Billed From:</td>
+              <td style="font-weight: 600; color: #111827; vertical-align: top;">${escapeHtml(settings.company_name)}</td>
+            </tr>
+            ${settings.company_address ? `
+            <tr>
+              <td style="font-weight: 700; color: #374151; vertical-align: top;">Address:</td>
+              <td style="color: #374151; vertical-align: top;">${escapeHtml(settings.company_address)}</td>
+            </tr>
+            ` : ''}
+            ${settings.company_phone ? `
+            <tr>
+              <td style="font-weight: 700; color: #374151;">Phone :</td>
+              <td style="color: #374151;">${escapeHtml(settings.company_phone)}</td>
+            </tr>
+            ` : ''}
+            ${settings.company_email ? `
+            <tr>
+              <td style="font-weight: 700; color: #374151;">Email Id :</td>
+              <td style="color: #374151;">${escapeHtml(settings.company_email)}</td>
+            </tr>
+            ` : ''}
+            ${settings.gstin ? `
+            <tr>
+              <td style="font-weight: 700; color: #111827;">GST IN :</td>
+              <td style="font-weight: 600; color: #111827;">${escapeHtml(settings.gstin)}</td>
+            </tr>
+            ` : ''}
+            ${settings.pan ? `
+            <tr>
+              <td style="font-weight: 700; color: #111827;">PAN :</td>
+              <td style="font-weight: 600; color: #111827;">${escapeHtml(settings.pan)}</td>
+            </tr>
+            ` : ''}
+          </table>
         </td>
 
-        <td style="vertical-align: top; width: 45%;">
-          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <!-- BILLED TO -->
+        <td style="width: 50%; vertical-align: top; padding-left: 25px;">
+          <div style="font-weight: 700; font-size: 13px; text-transform: uppercase; color: #000000; border-bottom: 2px solid #000000; padding-bottom: 3px; margin-bottom: 8px;">
+            BILLED TO
+          </div>
+          <table style="font-size: 12px; line-height: 1.5;">
             <tr>
-              <td style="padding: 6px 0; color: #64748b;">Subtotal:</td>
-              <td style="padding: 6px 0; text-align: right; font-weight: 500; color: #0f172a;">${currencySymbol}${quote.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td style="font-weight: 700; color: #111827; width: 75px; vertical-align: top;">Billed To :</td>
+              <td style="font-weight: 600; color: #111827; vertical-align: top;">
+                ${escapeHtml(quote.client_company || quote.client_name)}
+              </td>
             </tr>
-            ${quote.discount_amount > 0 ? `
-              <tr>
-                <td style="padding: 6px 0; color: #16a34a;">Discount ${quote.discount_type === 'percentage' ? `(${quote.discount_value}%)` : ''}:</td>
-                <td style="padding: 6px 0; text-align: right; font-weight: 500; color: #16a34a;">-${currencySymbol}${quote.discount_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              </tr>
-            ` : ''}
-            ${quote.tax_amount > 0 ? `
-              <tr>
-                <td style="padding: 6px 0; color: #64748b;">CGST (${(quote.tax_rate / 2).toFixed(1)}%):</td>
-                <td style="padding: 6px 0; text-align: right; color: #334155;">${currencySymbol}${(quote.tax_amount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              </tr>
-              <tr>
-                <td style="padding: 6px 0; color: #64748b;">SGST (${(quote.tax_rate / 2).toFixed(1)}%):</td>
-                <td style="padding: 6px 0; text-align: right; color: #334155;">${currencySymbol}${(quote.tax_amount / 2).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-              </tr>
-            ` : ''}
-            <tr style="border-top: 2px solid #0f172a; border-bottom: 2px solid #0f172a;">
-              <td style="padding: 10px 0; font-size: 16px; font-weight: 800; color: #0f172a;">Grand Total:</td>
-              <td style="padding: 10px 0; text-align: right; font-size: 18px; font-weight: 800; color: #0284c7;">${currencySymbol}${quote.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            ${quote.client_phone ? `
+            <tr>
+              <td style="font-weight: 700; color: #374151;">Phone:</td>
+              <td style="color: #374151;">${escapeHtml(quote.client_phone)}</td>
             </tr>
+            ` : ''}
+            ${quote.client_address ? `
+            <tr>
+              <td style="font-weight: 700; color: #374151; vertical-align: top;">Address:</td>
+              <td style="color: #374151; vertical-align: top;">${escapeHtml(quote.client_address)}</td>
+            </tr>
+            ` : ''}
+            ${quote.client_gstin ? `
+            <tr>
+              <td style="font-weight: 700; color: #111827;">GST IN :</td>
+              <td style="font-weight: 600; color: #111827;">${escapeHtml(quote.client_gstin)}</td>
+            </tr>
+            ` : ''}
           </table>
         </td>
       </tr>
     </table>
 
-    <!-- Terms & Signature -->
-    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+    <!-- Line Items Table (WebLedger Black Header) -->
+    <table style="margin-bottom: 24px; border: 1px solid #d1d5db;">
+      <thead>
+        <tr style="background: #000000; color: #ffffff;">
+          <th style="padding: 8px 10px; font-size: 12px; font-weight: 700; text-align: center; width: 6%; border-right: 1px solid #374151;">Sr. No.</th>
+          <th style="padding: 8px 12px; font-size: 12px; font-weight: 700; text-align: left; width: 28%; border-right: 1px solid #374151;">Particulars</th>
+          <th style="padding: 8px 12px; font-size: 12px; font-weight: 700; text-align: left; width: 22%; border-right: 1px solid #374151;">Description</th>
+          <th style="padding: 8px 12px; font-size: 12px; font-weight: 700; text-align: right; width: 16%; border-right: 1px solid #374151;">Amount ( ${currencyCode} )</th>
+          <th style="padding: 8px 10px; font-size: 12px; font-weight: 700; text-align: center; width: 12%; border-right: 1px solid #374151;">GST Rate</th>
+          <th style="padding: 8px 12px; font-size: 12px; font-weight: 700; text-align: right; width: 16%;">Total ( ${currencyCode} )</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows}
+      </tbody>
+    </table>
+
+    <!-- Bottom Section: Payment Info on Left & Totals Summary on Right -->
+    <table style="margin-bottom: 50px;">
       <tr>
-        <td style="vertical-align: top; width: 60%; font-size: 12px; color: #64748b;">
-          ${quote.terms ? `
-            <div style="font-weight: 700; color: #334155; margin-bottom: 4px; text-transform: uppercase; font-size: 11px;">Terms & Conditions</div>
-            <div style="white-space: pre-line; line-height: 1.6;">${escapeHtml(quote.terms)}</div>
-          ` : ''}
+        <!-- Left: Bank Details & QR Code -->
+        <td style="width: 58%; vertical-align: top; padding-right: 20px;">
+          <table style="width: 100%;">
+            <tr>
+              ${upiQr ? `
+                <td style="width: 125px; vertical-align: top; padding-right: 14px;">
+                  <img src="${escapeHtml(upiQr)}" alt="UPI QR" style="width: 115px; height: 115px; border: 1px solid #e5e7eb; border-radius: 4px; display: block;" />
+                  ${upiId ? `
+                    <div style="font-size: 8.5px; color: #4b5563; word-break: break-all; margin-top: 4px; text-align: center; max-width: 115px; font-family: monospace;">
+                      ${escapeHtml(upiId)}
+                    </div>
+                  ` : ''}
+                </td>
+              ` : ''}
+              <td style="vertical-align: top; font-size: 12px; line-height: 1.6;">
+                <div><strong>Name :</strong> ${escapeHtml(settings.bank_beneficiary_name || settings.company_name)}</div>
+                ${settings.bank_name ? `<div><strong>Bank Name :</strong> ${escapeHtml(settings.bank_name)},</div>` : ''}
+                ${settings.bank_account_no ? `<div><strong>Bank Account No :</strong> ${escapeHtml(settings.bank_account_no)}</div>` : ''}
+                ${settings.bank_ifsc ? `<div><strong>Bank/IFSC Code :</strong> ${escapeHtml(settings.bank_ifsc)}</div>` : ''}
+              </td>
+            </tr>
+          </table>
         </td>
-        <td style="vertical-align: bottom; width: 40%; text-align: right; font-size: 12px; color: #64748b;">
-          <div style="height: 50px;"></div>
-          <div style="border-top: 1px solid #cbd5e1; display: inline-block; padding-top: 6px; min-width: 180px; text-align: center;">
-            <div style="font-weight: 600; color: #0f172a;">For ${escapeHtml(settings.company_name)}</div>
-            <div style="color: #64748b; font-size: 11px;">Authorized Signatory</div>
+
+        <!-- Right: Totals Box -->
+        <td style="width: 42%; vertical-align: top;">
+          <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 12px 16px;">
+            <table style="font-size: 12px; line-height: 1.8;">
+              <tr>
+                <td style="color: #374151; font-weight: 500;">Sub-Total :</td>
+                <td style="text-align: right; font-weight: 500; color: #111827;">${formatMoney(quote.subtotal)}</td>
+              </tr>
+              ${quote.tax_amount > 0 ? `
+                <tr>
+                  <td style="color: #374151;">CGST :</td>
+                  <td style="text-align: right; color: #111827;">${formatMoney(cgstAmount)}</td>
+                </tr>
+                <tr>
+                  <td style="color: #374151;">SGST :</td>
+                  <td style="text-align: right; color: #111827;">${formatMoney(sgstAmount)}</td>
+                </tr>
+              ` : ''}
+              <tr>
+                <td style="color: #374151;">Discount :</td>
+                <td style="text-align: right; color: #111827;">${formatMoney(quote.discount_amount || 0)}</td>
+              </tr>
+              <tr>
+                <td style="color: #374151;">Round Off :</td>
+                <td style="text-align: right; color: #111827;">${currencyCode} 0.00</td>
+              </tr>
+              <tr style="border-top: 1px solid #d1d5db;">
+                <td style="font-size: 13px; font-weight: 700; color: #111827; padding-top: 6px;">Grand Total :</td>
+                <td style="text-align: right; font-size: 14px; font-weight: 800; color: #000000; padding-top: 6px;">${formatMoney(quote.total_amount)}</td>
+              </tr>
+            </table>
           </div>
         </td>
       </tr>
     </table>
+
+    <!-- Authorized Signature Section (Bottom Right) -->
+    <div style="display: flex; justify-content: flex-end; margin-top: 40px; page-break-inside: avoid;">
+      <div style="text-align: center; min-width: 200px;">
+        <div style="font-size: 12px; font-weight: 700; color: #111827; text-transform: uppercase;">
+          ${escapeHtml(settings.company_name)}
+        </div>
+        
+        <!-- Stamp & Signature Placeholders -->
+        <div style="height: 60px; margin: 8px 0; display: flex; align-items: center; justify-content: center; position: relative;">
+          <!-- Circular seal/stamp placeholder -->
+          <div style="width: 50px; height: 50px; border: 2px dashed #9ca3af; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #9ca3af; text-transform: uppercase; margin-right: 15px;">
+            SEAL
+          </div>
+          <!-- Signature cursive placeholder -->
+          <div style="font-family: 'Brush Script MT', cursive, sans-serif; font-size: 24px; color: #1f2937; transform: rotate(-5deg);">
+            Authorized
+          </div>
+        </div>
+
+        <div style="border-top: 1px solid #9ca3af; padding-top: 4px; font-size: 12px; color: #374151;">
+          Authorized Signature
+        </div>
+      </div>
+    </div>
   </div>
 </body>
 </html>`;
 }
 
-function escapeHtml(str: string): string {
+function escapeHtml(str?: string | null): string {
   if (!str) return '';
   return str
     .replace(/&/g, '&amp;')
