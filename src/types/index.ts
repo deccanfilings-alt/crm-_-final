@@ -737,3 +737,95 @@ export interface TeamMessage {
 }
 
 
+
+// ============================================================
+// QUOTATIONS & BILLING
+// ============================================================
+
+export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+export type QuotationDiscountType = 'percentage' | 'fixed' | 'none';
+export type QuotationTaxType = 'gst' | 'custom' | 'none';
+
+export interface QuotationSettings {
+  account_id: string;
+  company_name: string;
+  company_logo_url?: string | null;
+  company_address?: string | null;
+  company_phone?: string | null;
+  company_email?: string | null;
+  company_website?: string | null;
+  gstin?: string | null;
+  pan?: string | null;
+  bank_name?: string | null;
+  bank_account_no?: string | null;
+  bank_ifsc?: string | null;
+  bank_beneficiary_name?: string | null;
+  upi_id?: string | null;
+  upi_qr_url?: string | null;
+  default_terms?: string | null;
+  quote_prefix: string;
+  next_quote_number: number;
+  default_currency: string;
+  default_tax_rate: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationItem {
+  id: string;
+  quotation_id: string;
+  position: number;
+  title: string;
+  description?: string | null;
+  quantity: number;
+  unit_price: number;
+  tax_rate?: number;
+  total: number;
+  created_at?: string;
+}
+
+export interface Quotation {
+  id: string;
+  account_id: string;
+  quote_number: string;
+  title: string;
+  contact_id?: string | null;
+  deal_id?: string | null;
+  conversation_id?: string | null;
+  created_by_user_id?: string | null;
+  status: QuotationStatus;
+  issue_date: string;
+  valid_until?: string | null;
+  currency: string;
+  
+  subtotal: number;
+  discount_type: QuotationDiscountType;
+  discount_value: number;
+  discount_amount: number;
+  tax_type: QuotationTaxType;
+  tax_rate: number;
+  tax_amount: number;
+  total_amount: number;
+  
+  client_name: string;
+  client_phone?: string | null;
+  client_email?: string | null;
+  client_company?: string | null;
+  client_address?: string | null;
+  client_gstin?: string | null;
+  
+  notes?: string | null;
+  terms?: string | null;
+  pdf_url?: string | null;
+  public_token: string;
+  
+  sent_at?: string | null;
+  accepted_at?: string | null;
+  rejected_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  
+  items?: QuotationItem[];
+  contact?: Contact | null;
+  deal?: Deal | null;
+}
