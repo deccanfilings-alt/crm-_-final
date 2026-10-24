@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { findExistingContact, isUniqueViolation, canonicalPhone } from '@/lib/contacts/dedupe'
 
 export async function POST(req: Request) {
   try {
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
         user_id: accounts.owner_user_id,
         account_id: accounts.id,
         name: name?.trim() || null,
-        phone: phone.trim(),
+        phone: canonicalPhone(phone),
         email: email?.trim() || null,
         company: company?.trim() || null,
       })

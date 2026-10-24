@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { processBroadcast } from './broadcast-engine';
+import { processBroadcast, getDailyUniqueRecipientCount } from './broadcast-engine';
 import * as metaApiModule from './meta-api';
 import * as encryptionModule from './encryption';
 
@@ -158,5 +158,27 @@ describe('processBroadcast Engine', () => {
     expect(result.haltedCode).toBe(132015);
     expect(broadcastUpdates.some((b) => b.status === 'halted' && b.halted_code === 132015)).toBe(true);
     expect(recipientUpdates.some((r) => r.disposition === 'abort')).toBe(true);
+  });
+  it('builds unique recipient set with 10-digit sanitized key even for 12-digit stored numbers', async () => {
+    const mockDb: any = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            gte: () => ({
+              in: async () => ({
+                data: [
+                  { contact: { phone: '919573157786' }, sent_at: new Date().toISOString() },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      }),
+    };
+
+    const result = await getDailyUniqueRecipientCount(mockDb, 'acc-1');
+    expect(result.count).toBe(1);
+    expect(result.uniquePhones.has('9573157786')).toBe(true);
   });
 });

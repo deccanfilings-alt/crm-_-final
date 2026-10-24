@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { processBroadcast } from '@/lib/whatsapp/broadcast-engine';
 import { validateBroadcastPhone } from '@/lib/whatsapp/phone-utils';
-import { findExistingContact } from '@/lib/contacts/dedupe';
+import { findExistingContact, canonicalPhone } from '@/lib/contacts/dedupe';
 
 export async function POST(req: NextRequest) {
   try {
@@ -107,13 +107,14 @@ export async function POST(req: NextRequest) {
         if (existing) {
           contactId = existing.id;
         } else {
+          const canon = canonicalPhone(validation.sanitized);
           const { data: newContact } = await supabaseAdmin()
             .from('contacts')
             .insert({
               account_id: accountId,
               user_id: user.id,
-              phone: validation.sanitized,
-              name: (typeof r === 'object' && r.name) ? r.name : validation.sanitized
+              phone: canon,
+              name: (typeof r === 'object' && r.name) ? r.name : canon
             })
             .select('id')
             .maybeSingle();

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import {
+  canonicalPhone,
   dedupeByPhone,
   getPhoneLookupKeys,
   isUniqueViolation,
@@ -276,7 +277,7 @@ export function ImportModal({
         const rows = chunk.map((row) => ({
           user_id: user.id,
           account_id: accountId,
-          phone: row.phone,
+          phone: canonicalPhone(row.phone),
           name: row.name || null,
           email: row.email || null,
           company: row.company || null,

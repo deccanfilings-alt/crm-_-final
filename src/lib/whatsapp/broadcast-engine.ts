@@ -46,7 +46,8 @@ export async function getDailyUniqueRecipientCount(
       const phone = (r.contact as any)?.phone;
       if (phone) {
         const cleaned = phone.replace(/\D/g, '');
-        if (cleaned) uniquePhones.add(cleaned);
+        const key = validateBroadcastPhone(phone).sanitized || cleaned;
+        if (key) uniquePhones.add(key);
       }
     }
   }

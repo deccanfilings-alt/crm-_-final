@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import {
+  canonicalPhone,
   findExistingContact,
   isExactMatch,
   isUniqueViolation,
@@ -170,7 +171,7 @@ export function ContactForm({
           .from('contacts')
           .update({
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: canonicalPhone(phone),
             email: email.trim() || null,
             company: company.trim() || null,
             updated_at: new Date().toISOString(),
@@ -184,7 +185,7 @@ export function ContactForm({
             user_id: user.id,
             account_id: accountId,
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: canonicalPhone(phone),
             email: email.trim() || null,
             company: company.trim() || null,
           })
