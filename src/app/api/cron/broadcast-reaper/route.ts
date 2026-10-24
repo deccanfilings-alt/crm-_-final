@@ -1,15 +1,48 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 
-export async function GET() {
-  return handleReaper()
+export async function GET(request: Request) {
+  return handleReaper(request)
 }
 
-export async function POST() {
-  return handleReaper()
+export async function POST(request: Request) {
+  return handleReaper(request)
 }
 
-async function handleReaper() {
+async function handleReaper(request: Request) {
+  const cronSecret = process.env.CRON_SECRET
+
+  if (process.env.NODE_ENV === 'production') {
+    if (!cronSecret) {
+      return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
+    }
+
+    const authHeader = request.headers.get('authorization') ?? ''
+    const expected = `Bearer ${cronSecret}`
+    const suppliedBuf = Buffer.from(authHeader)
+    const expectedBuf = Buffer.from(expected)
+
+    if (
+      suppliedBuf.length !== expectedBuf.length ||
+      !timingSafeEqual(suppliedBuf, expectedBuf)
+    ) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  } else if (cronSecret) {
+    const authHeader = request.headers.get('authorization') ?? ''
+    const expected = `Bearer ${cronSecret}`
+    const suppliedBuf = Buffer.from(authHeader)
+    const expectedBuf = Buffer.from(expected)
+
+    if (
+      suppliedBuf.length !== expectedBuf.length ||
+      !timingSafeEqual(suppliedBuf, expectedBuf)
+    ) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
+
   try {
     const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString()
 

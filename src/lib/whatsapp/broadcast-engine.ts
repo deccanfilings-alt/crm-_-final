@@ -1,7 +1,7 @@
 import { cleanDisplayName } from '@/lib/contacts/display-name';
 import { setMarketingOptOut } from '@/lib/contacts/opt-out';
 import { recordBroadcastInThread } from './broadcast-thread';
-﻿import { classifyMetaError, ClassificationResult } from './classifier';
+﻿import { classifyMetaError } from './classifier';
 import { SerialRateLimiter, calculateBackoffDelay } from './limiter';
 import { validateBroadcastPhone } from './phone-utils';
 import { sendTemplateMessage } from './meta-api';
@@ -320,7 +320,7 @@ export async function processBroadcast(
           if (v.type === "static") return v.value || "";
           if (v.type === "field" && recipient.contact) {
             const fieldMap: Record<string, any> = {
-              name: recipient.contact.name,
+              name: cleanDisplayName(recipient.contact.name),
               phone: recipient.contact.phone,
               email: recipient.contact.email,
               company: recipient.contact.company,
