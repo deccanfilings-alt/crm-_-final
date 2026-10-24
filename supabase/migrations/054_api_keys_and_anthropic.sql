@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- 054_api_keys_and_anthropic.sql
 -- Adds API Keys table for external Agentic Connectors (Claude Code,
 -- OpenAI Codex, Cursor, AutoGen, etc.) and enables Anthropic as
@@ -29,11 +29,12 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON public.api_keys(key_hash);
 ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Admins and Owners can manage API keys" ON public.api_keys;
-CREATE POLICY "Admins and Owners can manage API keys"
+DROP POLICY IF EXISTS "Team members can manage API keys" ON public.api_keys;
+CREATE POLICY "Team members can manage API keys"
   ON public.api_keys
   FOR ALL
-  USING (is_account_member(account_id, 'admin'))
-  WITH CHECK (is_account_member(account_id, 'admin'));
+  USING (is_account_member(account_id, 'agent'))
+  WITH CHECK (is_account_member(account_id, 'agent'));
 
 -- Trigger for updated_at
 DROP TRIGGER IF EXISTS set_api_keys_updated_at ON public.api_keys;

@@ -21,8 +21,9 @@ export async function GET() {
     return NextResponse.json({ error: 'No account found' }, { status: 404 });
   }
 
-  if (profile.account_role !== 'admin' && profile.account_role !== 'owner') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  // Allow Team Members (agent), Admins, and Owners to view API keys. Only read-only viewers are restricted.
+  if (profile.account_role === 'viewer') {
+    return NextResponse.json({ error: 'Forbidden: Viewers cannot manage API keys' }, { status: 403 });
   }
 
   const { data: keys, error } = await supabaseAdmin()
@@ -56,15 +57,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'No account found' }, { status: 404 });
   }
 
-  if (profile.account_role !== 'admin' && profile.account_role !== 'owner') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  // Allow Team Members (agent), Admins, and Owners to generate API keys. Only read-only viewers are restricted.
+  if (profile.account_role === 'viewer') {
+    return NextResponse.json({ error: 'Forbidden: Viewers cannot generate API keys' }, { status: 403 });
   }
 
   try {
     const body = await req.json().catch(() => ({}));
     const { name, scopes, expiresInDays } = body;
 
-    // Name is completely optional; auto-generate a descriptive label if omitted
+    // Name is optional; auto-generate a descriptive label if omitted
     const dateStr = new Date().toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -114,8 +116,9 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: 'No account found' }, { status: 404 });
   }
 
-  if (profile.account_role !== 'admin' && profile.account_role !== 'owner') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  // Allow Team Members (agent), Admins, and Owners to revoke API keys.
+  if (profile.account_role === 'viewer') {
+    return NextResponse.json({ error: 'Forbidden: Viewers cannot revoke API keys' }, { status: 403 });
   }
 
   try {
