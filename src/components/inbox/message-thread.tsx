@@ -1,3 +1,4 @@
+import { renderTemplateBody } from '@/lib/whatsapp/render-template-body';
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -67,17 +68,7 @@ interface ReplyDraft {
   preview: string;
 }
 
-function renderTemplateBody(body: string, params: string[]): string {
-  let paramIdx = 0;
-  return body.replace(/\{\{([^}]+)\}\}/g, (match, raw) => {
-    const num = Number(raw);
-    if (!isNaN(num) && num >= 1) {
-      return params[num - 1] ?? match;
-    }
-    const val = params[paramIdx++];
-    return val && val.trim().length > 0 ? val : match;
-  });
-}
+
 
 interface MessageThreadProps {
   conversation: Conversation | null;

@@ -1,4 +1,5 @@
 import { setMarketingOptOut } from '@/lib/contacts/opt-out';
+import { recordBroadcastInThread } from './broadcast-thread';
 ﻿import { classifyMetaError, ClassificationResult } from './classifier';
 import { SerialRateLimiter, calculateBackoffDelay } from './limiter';
 import { validateBroadcastPhone } from './phone-utils';
@@ -300,7 +301,36 @@ export async function processBroadcast(
       break;
     }
 
-    // 4. Send with Serial Limiter and Retries (up to 5 attempts)
+    // 4. Hoist params computation before retry loop
+    const params: string[] = (() => {
+      if (Array.isArray(broadcast.template_variables)) return broadcast.template_variables;
+      if (Array.isArray(broadcast.template_variables?.params)) return broadcast.template_variables.params;
+      if (broadcast.template_variables && typeof broadcast.template_variables === "object") {
+        const keys = Object.keys(broadcast.template_variables).sort((a, b) => {
+          const an = Number(a); const bn = Number(b);
+          if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+          return a.localeCompare(b);
+        });
+        return keys.map((key) => {
+          const v = broadcast.template_variables[key];
+          if (!v) return "";
+          if (typeof v === "string") return v;
+          if (v.type === "static") return v.value || "";
+          if (v.type === "field" && recipient.contact) {
+            const fieldMap: Record<string, any> = {
+              name: recipient.contact.name,
+              phone: recipient.contact.phone,
+              email: recipient.contact.email,
+              company: recipient.contact.company,
+            };
+            return fieldMap[v.value] || "";
+          }
+          return "";
+        });
+      }
+      return [];
+    })();
+
     let currentAttempt = (recipient.attempt_count || 0) + 1;
     let messageSent = false;
 
@@ -315,34 +345,7 @@ export async function processBroadcast(
           templateName: broadcast.template_name,
           language: broadcast.template_language || 'en_US',
           template: templateRow || undefined,
-          params: (() => {
-            if (Array.isArray(broadcast.template_variables)) return broadcast.template_variables;
-            if (Array.isArray(broadcast.template_variables?.params)) return broadcast.template_variables.params;
-            if (broadcast.template_variables && typeof broadcast.template_variables === "object") {
-              const keys = Object.keys(broadcast.template_variables).sort((a, b) => {
-                const an = Number(a); const bn = Number(b);
-                if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
-                return a.localeCompare(b);
-              });
-              return keys.map((key) => {
-                const v = broadcast.template_variables[key];
-                if (!v) return "";
-                if (typeof v === "string") return v;
-                if (v.type === "static") return v.value || "";
-                if (v.type === "field" && recipient.contact) {
-                  const fieldMap: Record<string, any> = {
-                    name: recipient.contact.name,
-                    phone: recipient.contact.phone,
-                    email: recipient.contact.email,
-                    company: recipient.contact.company,
-                  };
-                  return fieldMap[v.value] || "";
-                }
-                return "";
-              });
-            }
-            return [];
-          })(),
+          params,
         });
 
         messageSent = true;
@@ -387,6 +390,18 @@ export async function processBroadcast(
             error_details: null,
           })
           .eq('id', recipient.id);
+
+        if (recipient.contact_id) {
+          await recordBroadcastInThread(supabaseAdmin, {
+            accountId: broadcast.account_id,
+            ownerUserId: broadcast.user_id,
+            contactId: recipient.contact_id,
+            wamid: sendResult.messageId,
+            templateName: broadcast.template_name,
+            bodyText: templateRow?.body_text,
+            params,
+          });
+        }
 
       } catch (err: any) {
         const httpStatus = err?.status || err?.rawStatus;
