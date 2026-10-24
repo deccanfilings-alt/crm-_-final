@@ -27,7 +27,9 @@ import {
   Code2,
   Layers,
   Globe,
-  Info,
+  ShieldCheck,
+  Zap,
+  Lock,
 } from 'lucide-react';
 
 interface ApiKeyItem {
@@ -78,19 +80,15 @@ export function ApiKeysPanel() {
     fetchKeys();
   }, []);
 
-  const handleCreate = async () => {
-    if (!keyName.trim()) {
-      toast.error('Please enter a name for the key');
-      return;
-    }
-
+  const handleCreate = async (customName?: string) => {
+    const finalName = (customName ?? keyName).trim();
     setCreating(true);
     try {
       const res = await fetch('/api/settings/api-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: keyName.trim(),
+          name: finalName || undefined, // backend defaults to "Agent Key (Date)" if empty
           scopes: ['all'],
         }),
       });
@@ -100,10 +98,10 @@ export function ApiKeysPanel() {
 
       setNewlyCreatedKey(data.apiKey.rawKey);
       setKeyName('');
-      toast.success('API key generated successfully!');
+      toast.success('Secure API key generated automatically!');
       fetchKeys();
     } catch (e: any) {
-      toast.error(e.message || 'Failed to create key');
+      toast.error(e.message || 'Failed to generate key');
     } finally {
       setCreating(false);
     }
@@ -142,25 +140,109 @@ export function ApiKeysPanel() {
         description="Connect Claude Code CLI, OpenAI Codex, Cursor, Claude Desktop, or custom AI agents directly to your live CRM using Model Context Protocol (MCP) or OpenAPI."
       />
 
+      {/* Auto-Generate API Key Box */}
+      <Card className="border-primary/40 bg-gradient-to-br from-card via-card to-primary/5 shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Automatic Secure Key Generator</CardTitle>
+                <CardDescription className="text-xs">
+                  Zero manual typing required. Generates an unpredictable 48-character high-entropy secret key.
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground bg-muted/80 rounded-md px-2.5 py-1">
+              <Lock className="h-3 w-3 text-emerald-500" />
+              <span>CSPRNG 192-bit + SHA-256 Hashed</span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-md bg-muted/40 border border-border/80 p-3 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">💡 How it works: </span>
+            You do <strong className="text-foreground">not</strong> need to manually invent or type an API key. 
+            Simply pick a preset label below or click <strong className="text-foreground">1-Click Auto-Generate Key</strong>. 
+            The system instantly creates a secure <code className="text-primary font-mono font-medium">wacrm_live_...</code> token for you.
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-foreground">
+                Key Label / Friendly Name <span className="text-muted-foreground font-normal">(Optional)</span>
+              </label>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span>Presets:</span>
+                {[
+                  'Claude Code CLI',
+                  'OpenAI Codex',
+                  'Cursor IDE',
+                  'Claude Desktop',
+                ].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      setKeyName(preset);
+                      handleCreate(preset);
+                    }}
+                    className="rounded bg-muted hover:bg-primary/10 hover:text-primary text-[11px] px-2 py-0.5 transition-colors"
+                  >
+                    +{preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Input
+                placeholder="e.g. Claude Code CLI (MacBook) — or leave blank to auto-name"
+                value={keyName}
+                onChange={(e) => setKeyName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                className="font-sans"
+              />
+              <Button
+                onClick={() => handleCreate()}
+                disabled={creating}
+                className="shrink-0 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 font-medium px-5"
+              >
+                {creating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Zap className="h-4 w-4 text-amber-300 fill-amber-300" />
+                )}
+                1-Click Auto-Generate Key
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Newly Created Key Alert Banner */}
       {newlyCreatedKey && (
-        <Card className="border-emerald-500/50 bg-emerald-500/10">
+        <Card className="border-emerald-500/50 bg-emerald-500/10 shadow-sm animate-in fade-in-50 duration-200">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">
               <KeyRound className="h-5 w-5" />
-              API Key Generated Successfully
+              Secure API Key Generated Successfully
             </div>
             <CardDescription className="text-foreground/80">
-              Please copy your API key now. It has been automatically populated into the connection guides below.
+              Please copy your API key now. It has been automatically populated into all the connection commands below!
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between rounded-md bg-background border border-emerald-500/30 p-2.5 font-mono text-xs text-foreground">
-              <span className="break-all mr-2">{newlyCreatedKey}</span>
+              <span className="break-all mr-2 font-semibold text-emerald-600 dark:text-emerald-400">
+                {newlyCreatedKey}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1 shrink-0"
+                className="h-8 gap-1 shrink-0 border-emerald-500/40 hover:bg-emerald-500/10"
                 onClick={() => copyToClipboard(newlyCreatedKey, 'new_key')}
               >
                 {copied === 'new_key' ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
@@ -484,30 +566,6 @@ export function ApiKeysPanel() {
         </CardContent>
       </Card>
 
-      {/* Generate New Key Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Generate API Key</CardTitle>
-          <CardDescription>
-            Create a secure API key for yourself or team members to link Claude Code, Codex, or external agents.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Input
-              placeholder="e.g. Claude Code CLI (MacBook) or Codex Assistant"
-              value={keyName}
-              onChange={(e) => setKeyName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            />
-            <Button onClick={handleCreate} disabled={creating || !keyName.trim()} className="shrink-0 gap-1.5">
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Generate Key
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Active Keys List */}
       <Card>
         <CardHeader>
@@ -523,7 +581,7 @@ export function ApiKeysPanel() {
             </div>
           ) : keys.length === 0 ? (
             <div className="text-center py-6 text-sm text-muted-foreground">
-              No API keys generated yet. Create one above to connect Claude Code or Codex.
+              No API keys generated yet. Click &quot;1-Click Auto-Generate Key&quot; above to create one.
             </div>
           ) : (
             <div className="divide-y divide-border">

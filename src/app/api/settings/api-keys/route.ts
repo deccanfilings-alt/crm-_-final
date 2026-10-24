@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { generateApiKey } from '@/lib/auth/agent-auth';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
@@ -61,17 +61,25 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { name, scopes, expiresInDays } = body;
 
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
-      return NextResponse.json({ error: 'Key name is required' }, { status: 400 });
-    }
+    // Name is completely optional; auto-generate a descriptive label if omitted
+    const dateStr = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const keyName =
+      name && typeof name === 'string' && name.trim().length > 0
+        ? name.trim()
+        : `Agent Key (${dateStr})`;
 
     const created = await generateApiKey({
       accountId: profile.account_id,
       userId: userData.user.id,
-      name: name.trim(),
+      name: keyName,
       scopes: Array.isArray(scopes) && scopes.length > 0 ? scopes : ['all'],
       expiresInDays: typeof expiresInDays === 'number' ? expiresInDays : undefined,
     });
@@ -111,7 +119,8 @@ export async function DELETE(req: Request) {
   }
 
   try {
-    const { id } = await req.json();
+    const body = await req.json();
+    const { id } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'Key ID is required' }, { status: 400 });
@@ -123,9 +132,7 @@ export async function DELETE(req: Request) {
       .eq('id', id)
       .eq('account_id', profile.account_id);
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) throw error;
 
     return NextResponse.json({ success: true });
   } catch (error) {
