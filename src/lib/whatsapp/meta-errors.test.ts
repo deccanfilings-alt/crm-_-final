@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   parseMetaError,
   check24HourServiceWindow,
@@ -6,6 +6,15 @@ import {
 
 describe('Meta Errors & 24-Hour Service Window Diagnostics', () => {
   describe('check24HourServiceWindow', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it('returns closed/expired when customer has never messaged (null/undefined)', () => {
       const result = check24HourServiceWindow(null);
       expect(result.isOpen).toBe(false);
@@ -18,7 +27,7 @@ describe('Meta Errors & 24-Hour Service Window Diagnostics', () => {
     });
 
     it('returns open/active when customer messaged 2 hours ago', () => {
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const twoHoursAgo = new Date(Date.now() - (2 * 60 * 60 * 1000 + 1000)).toISOString();
       const result = check24HourServiceWindow(twoHoursAgo);
 
       expect(result.isOpen).toBe(true);
