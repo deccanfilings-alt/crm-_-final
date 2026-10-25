@@ -18,9 +18,11 @@ CREATE TABLE IF NOT EXISTS quotation_settings (
   bank_beneficiary_name TEXT,
   upi_id TEXT,
   upi_qr_url TEXT,
+  signature_url TEXT,
+  stamp_url TEXT,
   default_terms TEXT DEFAULT '1. Quotation valid for 15 days.
 2. 50% advance before project commencement.
-3. Government statutory fees subject to actual receipt.',
+3. Delivery timelines commence post document completion.',
   quote_prefix TEXT NOT NULL DEFAULT 'DF-QT-',
   next_quote_number INT NOT NULL DEFAULT 1001,
   default_currency TEXT NOT NULL DEFAULT 'INR',
@@ -61,6 +63,18 @@ CREATE TABLE IF NOT EXISTS quotations (
   client_company TEXT,
   client_address TEXT,
   client_gstin TEXT,
+
+  -- Dynamic Issuing Entity & Signatures
+  company_name TEXT,
+  company_logo_url TEXT,
+  company_address TEXT,
+  company_phone TEXT,
+  company_email TEXT,
+  company_website TEXT,
+  gstin TEXT,
+  pan TEXT,
+  signature_url TEXT,
+  stamp_url TEXT,
   
   -- Meta & Notes
   notes TEXT,

@@ -70,6 +70,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
   const [deals, setDeals] = useState<Deal[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
@@ -714,7 +715,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
                 variant="ghost"
                 size="icon"
                 className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                onClick={() => setQuoteModalOpen(true)}
+                onClick={() => { setEditingQuotation(null); setQuoteModalOpen(true); }}
                 title="Create Quotation"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -725,7 +726,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
               {quotations.length === 0 ? (
                 <button
                   type="button"
-                  onClick={() => setQuoteModalOpen(true)}
+                  onClick={() => { setEditingQuotation(null); setQuoteModalOpen(true); }}
                   className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-center text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors"
                 >
                   + Create quotation for this contact
@@ -761,6 +762,19 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
                       </span>
 
                       <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-primary"
+                          title="Edit Quotation"
+                          onClick={() => {
+                            setEditingQuotation(q);
+                            setQuoteModalOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1170,6 +1184,21 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Quotation Builder & Editor Modal */}
+      <QuotationBuilderModal
+        open={quoteModalOpen}
+        onOpenChange={(open) => {
+          setQuoteModalOpen(open);
+          if (!open) setEditingQuotation(null);
+        }}
+        initialContact={contact}
+        initialConversationId={conversation?.id || null}
+        quotationToEdit={editingQuotation}
+        onSuccess={() => {
+          fetchContactData();
+        }}
+      />
 
       {/* Quick Edit Contact Details Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

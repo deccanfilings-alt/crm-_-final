@@ -1,8 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
-import { Receipt, Loader2, Building2, Landmark, QrCode, FileText } from "lucide-react";
+import {
+  Receipt,
+  Loader2,
+  Building2,
+  Landmark,
+  QrCode,
+  FileText,
+  Upload,
+  X,
+  CheckCircle2,
+  Stamp,
+  PenTool,
+} from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +28,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { SettingsPanelHead } from "./settings-panel-head";
+import { uploadAccountMedia } from "@/lib/storage/upload-media";
 import type { QuotationSettings } from "@/types";
 
 export function QuotationSettingsPanel() {
@@ -24,6 +37,14 @@ export function QuotationSettingsPanel() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingSig, setUploadingSig] = useState(false);
+  const [uploadingStamp, setUploadingStamp] = useState(false);
+
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const sigInputRef = useRef<HTMLInputElement>(null);
+  const stampInputRef = useRef<HTMLInputElement>(null);
+
   const [formData, setFormData] = useState<Partial<QuotationSettings>>({
     company_name: "Deccan Filings",
     company_address: "",
@@ -39,6 +60,8 @@ export function QuotationSettingsPanel() {
     bank_ifsc: "",
     upi_id: "",
     upi_qr_url: "",
+    signature_url: "",
+    stamp_url: "",
     quote_prefix: "DF-QT-",
     next_quote_number: 1001,
     default_currency: "INR",
@@ -67,6 +90,32 @@ export function QuotationSettingsPanel() {
 
   const handleChange = (field: keyof QuotationSettings, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleFileUpload = async (
+    field: "company_logo_url" | "signature_url" | "stamp_url",
+    file: File
+  ) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload a valid image file (PNG, JPG, WEBP, SVG).");
+      return;
+    }
+
+    try {
+      if (field === "company_logo_url") setUploadingLogo(true);
+      if (field === "signature_url") setUploadingSig(true);
+      if (field === "stamp_url") setUploadingStamp(true);
+
+      const res = await uploadAccountMedia("chat-media", file);
+      handleChange(field, res.publicUrl);
+      toast.success("Image uploaded successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to upload image");
+    } finally {
+      if (field === "company_logo_url") setUploadingLogo(false);
+      if (field === "signature_url") setUploadingSig(false);
+      if (field === "stamp_url") setUploadingStamp(false);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -109,7 +158,7 @@ export function QuotationSettingsPanel() {
     <div className="space-y-6">
       <SettingsPanelHead
         title="Quotations & Billing"
-        description="Configure company details, GSTIN, bank information, and quote numbering for PDF generation and WhatsApp delivery."
+        description="Configure default issuing company details, GSTIN, bank information, authorized signatures, and official seals for quotations and invoices."
       />
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -118,10 +167,10 @@ export function QuotationSettingsPanel() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-primary" />
-              <CardTitle>Company Details</CardTitle>
+              <CardTitle>Default Issuing Company Details</CardTitle>
             </div>
             <CardDescription>
-              These details appear on the header of all client-facing quotations and PDFs.
+              These details appear on the header of client quotations. You can also customize the issuing company per quotation when serving other client entities.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -184,14 +233,229 @@ export function QuotationSettingsPanel() {
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="company_logo_url">Company Logo URL (Optional)</Label>
-              <Input
-                id="company_logo_url"
-                disabled={!canEdit}
-                value={formData.company_logo_url || ""}
-                onChange={(e) => handleChange("company_logo_url", e.target.value)}
-                placeholder="https://example.com/logo.png"
-              />
+              <Label htmlFor="company_logo_url">Company Logo</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="company_logo_url"
+                  disabled={!canEdit}
+                  value={formData.company_logo_url || ""}
+                  onChange={(e) => handleChange("company_logo_url", e.target.value)}
+                  placeholder="https://example.com/logo.png"
+                  className="flex-1 text-xs"
+                />
+                <input
+                  type="file"
+                  ref={logoInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleFileUpload("company_logo_url", f);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!canEdit || uploadingLogo}
+                  onClick={() => logoInputRef.current?.click()}
+                  className="gap-1.5 text-xs shrink-0"
+                >
+                  {uploadingLogo ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  Upload
+                </Button>
+              </div>
+              {formData.company_logo_url && (
+                <div className="mt-2 flex items-center gap-3 p-2 border rounded-md bg-muted/20">
+                  <img
+                    src={formData.company_logo_url}
+                    alt="Company Logo Preview"
+                    className="h-10 max-w-[120px] object-contain rounded"
+                  />
+                  <div className="flex-1 text-[11px] text-muted-foreground truncate">
+                    Logo Preview Active
+                  </div>
+                  {canEdit && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleChange("company_logo_url", "")}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Dynamic Signatures & Stamps */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Stamp className="h-5 w-5 text-primary" />
+              <CardTitle>Authorized Signature & Official Stamp</CardTitle>
+            </div>
+            <CardDescription>
+              Upload your company&apos;s digital signature and seal. These appear on generated quotation PDFs and web views. Can also be overridden dynamically on any individual quotation.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 sm:grid-cols-2">
+            {/* Signature Upload */}
+            <div className="space-y-3 p-4 border rounded-lg bg-muted/10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-medium text-xs">
+                  <PenTool className="h-4 w-4 text-primary" />
+                  Authorized Signature
+                </div>
+                {formData.signature_url && (
+                  <span className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Configured
+                  </span>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  disabled={!canEdit}
+                  value={formData.signature_url || ""}
+                  onChange={(e) => handleChange("signature_url", e.target.value)}
+                  placeholder="https://.../signature.png"
+                  className="text-xs flex-1"
+                />
+                <input
+                  type="file"
+                  ref={sigInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleFileUpload("signature_url", f);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!canEdit || uploadingSig}
+                  onClick={() => sigInputRef.current?.click()}
+                  className="gap-1.5 text-xs shrink-0"
+                >
+                  {uploadingSig ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  Upload Image
+                </Button>
+              </div>
+
+              {formData.signature_url ? (
+                <div className="relative border rounded-md p-3 bg-background flex flex-col items-center justify-center">
+                  <img
+                    src={formData.signature_url}
+                    alt="Signature Preview"
+                    className="h-16 max-w-[200px] object-contain"
+                  />
+                  {canEdit && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute top-1 right-1 h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleChange("signature_url", "")}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[11px] text-muted-foreground italic border border-dashed rounded p-3 text-center">
+                  No signature uploaded. A standard signature underline placeholder will be shown.
+                </div>
+              )}
+            </div>
+
+            {/* Stamp Upload */}
+            <div className="space-y-3 p-4 border rounded-lg bg-muted/10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-medium text-xs">
+                  <Stamp className="h-4 w-4 text-primary" />
+                  Official Seal / Stamp
+                </div>
+                {formData.stamp_url && (
+                  <span className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Configured
+                  </span>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  disabled={!canEdit}
+                  value={formData.stamp_url || ""}
+                  onChange={(e) => handleChange("stamp_url", e.target.value)}
+                  placeholder="https://.../official-stamp.png"
+                  className="text-xs flex-1"
+                />
+                <input
+                  type="file"
+                  ref={stampInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleFileUpload("stamp_url", f);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!canEdit || uploadingStamp}
+                  onClick={() => stampInputRef.current?.click()}
+                  className="gap-1.5 text-xs shrink-0"
+                >
+                  {uploadingStamp ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  Upload Image
+                </Button>
+              </div>
+
+              {formData.stamp_url ? (
+                <div className="relative border rounded-md p-3 bg-background flex flex-col items-center justify-center">
+                  <img
+                    src={formData.stamp_url}
+                    alt="Stamp Preview"
+                    className="h-16 max-w-[120px] object-contain"
+                  />
+                  {canEdit && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute top-1 right-1 h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleChange("stamp_url", "")}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[11px] text-muted-foreground italic border border-dashed rounded p-3 text-center">
+                  No official stamp uploaded. Optional.
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -367,7 +631,7 @@ export function QuotationSettingsPanel() {
                 disabled={!canEdit}
                 value={formData.default_terms || ""}
                 onChange={(e) => handleChange("default_terms", e.target.value)}
-                placeholder="1. Quotation valid for 15 days from date of issue.&#10;2. 50% advance before project commencement.&#10;3. Government statutory fees subject to actual receipts."
+                placeholder="1. Quotation valid for 15 days from date of issue.&#10;2. 50% advance before project commencement.&#10;3. Delivery timelines commence post document completion."
                 rows={4}
               />
             </div>

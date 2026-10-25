@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import {
   Plus,
@@ -11,6 +11,13 @@ import {
   User,
   Check,
   Search,
+  Building2,
+  Upload,
+  X,
+  Stamp,
+  PenTool,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -27,16 +34,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { calculateQuotationTotals } from "@/lib/quotations/calculations";
+import { uploadAccountMedia } from "@/lib/storage/upload-media";
 import type { Contact, Quotation } from "@/types";
-
-interface QuotationBuilderModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  initialContact?: Contact | null;
-  initialConversationId?: string | null;
-  quotationToEdit?: Quotation | null;
-  onSuccess?: (quotation: Quotation) => void;
-}
 
 interface FormItem {
   id?: string;
@@ -45,6 +44,15 @@ interface FormItem {
   quantity: number;
   unit_price: number;
   total: number;
+}
+
+interface QuotationBuilderModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialContact?: Contact | null;
+  initialConversationId?: string | null;
+  quotationToEdit?: Quotation | null;
+  onSuccess?: (quotation: Quotation) => void;
 }
 
 export function QuotationBuilderModal({
@@ -65,7 +73,7 @@ export function QuotationBuilderModal({
   const [contactSearch, setContactSearch] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
-  // Form Fields
+  // Form Fields - Quotation Meta
   const [title, setTitle] = useState("");
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
@@ -85,8 +93,35 @@ export function QuotationBuilderModal({
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
 
+  // Dynamic Issuing Entity & Signatures/Stamps (Fully customizable per quote)
+  const [showEntityDetails, setShowEntityDetails] = useState(false);
+  const [companyName, setCompanyName] = useState("Deccan Filings");
+  const [companyLogoUrl, setCompanyLogoUrl] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyWebsite, setCompanyWebsite] = useState("");
+  const [companyGstin, setCompanyGstin] = useState("");
+  const [companyPan, setCompanyPan] = useState("");
+  const [signatureUrl, setSignatureUrl] = useState("");
+  const [stampUrl, setStampUrl] = useState("");
+
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingSig, setUploadingSig] = useState(false);
+  const [uploadingStamp, setUploadingStamp] = useState(false);
+
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const sigInputRef = useRef<HTMLInputElement>(null);
+  const stampInputRef = useRef<HTMLInputElement>(null);
+
   const [items, setItems] = useState<FormItem[]>([
-    { title: "Legal & Regulatory Filing", description: "Statutory fee and professional drafting", quantity: 1, unit_price: 5000, total: 5000 },
+    {
+      title: "Professional Services",
+      description: "Comprehensive documentation, consulting and filing service",
+      quantity: 1,
+      unit_price: 5000,
+      total: 5000,
+    },
   ]);
 
   // Load Contacts for Search
@@ -102,6 +137,35 @@ export function QuotationBuilderModal({
     }
     loadContacts();
   }, [open, supabase]);
+
+  // File upload handler
+  const handleUploadFile = async (
+    field: "company_logo_url" | "signature_url" | "stamp_url",
+    file: File
+  ) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload a valid image file (PNG, JPG, WEBP, SVG).");
+      return;
+    }
+
+    try {
+      if (field === "company_logo_url") setUploadingLogo(true);
+      if (field === "signature_url") setUploadingSig(true);
+      if (field === "stamp_url") setUploadingStamp(true);
+
+      const res = await uploadAccountMedia("chat-media", file);
+      if (field === "company_logo_url") setCompanyLogoUrl(res.publicUrl);
+      if (field === "signature_url") setSignatureUrl(res.publicUrl);
+      if (field === "stamp_url") setStampUrl(res.publicUrl);
+      toast.success("Image uploaded successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to upload image");
+    } finally {
+      if (field === "company_logo_url") setUploadingLogo(false);
+      if (field === "signature_url") setUploadingSig(false);
+      if (field === "stamp_url") setUploadingStamp(false);
+    }
+  };
 
   // Prefill or reset state on open
   useEffect(() => {
@@ -123,6 +187,27 @@ export function QuotationBuilderModal({
       setTaxRate(quotationToEdit.tax_rate ?? 18.0);
       setNotes(quotationToEdit.notes || "");
       setTerms(quotationToEdit.terms || "");
+
+      // Dynamic Company & Signature Overrides
+      setCompanyName(quotationToEdit.company_name || "Deccan Filings");
+      setCompanyLogoUrl(quotationToEdit.company_logo_url || "");
+      setCompanyAddress(quotationToEdit.company_address || "");
+      setCompanyPhone(quotationToEdit.company_phone || "");
+      setCompanyEmail(quotationToEdit.company_email || "");
+      setCompanyWebsite(quotationToEdit.company_website || "");
+      setCompanyGstin(quotationToEdit.gstin || "");
+      setCompanyPan(quotationToEdit.pan || "");
+      setSignatureUrl(quotationToEdit.signature_url || "");
+      setStampUrl(quotationToEdit.stamp_url || "");
+
+      // If quotation has custom company/signature, auto-open the section
+      if (
+        (quotationToEdit.company_name && quotationToEdit.company_name !== "Deccan Filings") ||
+        quotationToEdit.signature_url ||
+        quotationToEdit.stamp_url
+      ) {
+        setShowEntityDetails(true);
+      }
 
       if (quotationToEdit.items && quotationToEdit.items.length > 0) {
         setItems(
@@ -156,7 +241,6 @@ export function QuotationBuilderModal({
 
       setTitle("");
       setIssueDate(new Date().toISOString().split("T")[0]);
-      // Set valid until to 15 days ahead by default
       const d = new Date();
       d.setDate(d.getDate() + 15);
       setValidUntil(d.toISOString().split("T")[0]);
@@ -167,21 +251,36 @@ export function QuotationBuilderModal({
       setTaxRate(18.0);
       setNotes("");
 
-      // Fetch default terms from settings
+      // Fetch default settings
       fetch("/api/quotations/settings")
         .then((r) => r.json())
         .then((data) => {
-          if (data.settings?.default_terms) {
-            setTerms(data.settings.default_terms);
-          }
-          if (data.settings?.default_tax_rate !== undefined) {
-            setTaxRate(data.settings.default_tax_rate);
+          if (data.settings) {
+            const s = data.settings;
+            if (s.company_name) setCompanyName(s.company_name);
+            if (s.company_logo_url) setCompanyLogoUrl(s.company_logo_url);
+            if (s.company_address) setCompanyAddress(s.company_address);
+            if (s.company_phone) setCompanyPhone(s.company_phone);
+            if (s.company_email) setCompanyEmail(s.company_email);
+            if (s.company_website) setCompanyWebsite(s.company_website);
+            if (s.gstin) setCompanyGstin(s.gstin);
+            if (s.pan) setCompanyPan(s.pan);
+            if (s.signature_url) setSignatureUrl(s.signature_url);
+            if (s.stamp_url) setStampUrl(s.stamp_url);
+            if (s.default_terms) setTerms(s.default_terms);
+            if (s.default_tax_rate !== undefined) setTaxRate(s.default_tax_rate);
           }
         })
         .catch(() => {});
 
       setItems([
-        { title: "Service Charge", description: "Professional consultation and filing", quantity: 1, unit_price: 5000, total: 5000 },
+        {
+          title: "Professional Services",
+          description: "Comprehensive documentation, consulting and filing service",
+          quantity: 1,
+          unit_price: 5000,
+          total: 5000,
+        },
       ]);
     }
   }, [open, quotationToEdit, initialContact]);
@@ -202,7 +301,10 @@ export function QuotationBuilderModal({
     setItems((prev) => {
       const updated = [...prev];
       const cur = { ...updated[index], [field]: value };
-      cur.total = Math.round((Number(cur.quantity || 0) * Number(cur.unit_price || 0) + Number.EPSILON) * 100) / 100;
+      cur.total =
+        Math.round(
+          (Number(cur.quantity || 0) * Number(cur.unit_price || 0) + Number.EPSILON) * 100
+        ) / 100;
       updated[index] = cur;
       return updated;
     });
@@ -255,7 +357,8 @@ export function QuotationBuilderModal({
     try {
       const payload = {
         title: title.trim(),
-        contact_id: selectedContact?.id || initialContact?.id || quotationToEdit?.contact_id || null,
+        contact_id:
+          selectedContact?.id || initialContact?.id || quotationToEdit?.contact_id || null,
         conversation_id: initialConversationId || quotationToEdit?.conversation_id || null,
         client_name: clientName.trim(),
         client_phone: clientPhone.trim() || null,
@@ -271,6 +374,17 @@ export function QuotationBuilderModal({
         tax_rate: taxRate,
         notes: notes.trim() || null,
         terms: terms.trim() || null,
+        // Dynamic Issuing Entity & Signatures
+        company_name: companyName.trim() || null,
+        company_logo_url: companyLogoUrl.trim() || null,
+        company_address: companyAddress.trim() || null,
+        company_phone: companyPhone.trim() || null,
+        company_email: companyEmail.trim() || null,
+        company_website: companyWebsite.trim() || null,
+        gstin: companyGstin.trim() || null,
+        pan: companyPan.trim() || null,
+        signature_url: signatureUrl.trim() || null,
+        stamp_url: stampUrl.trim() || null,
         items: items.map((it) => ({
           title: it.title,
           description: it.description || null,
@@ -306,7 +420,9 @@ export function QuotationBuilderModal({
         }
         toast.success("Quotation saved & dispatched via WhatsApp!");
       } else {
-        toast.success(quotationToEdit ? "Quotation updated successfully!" : "Quotation created successfully!");
+        toast.success(
+          quotationToEdit ? "Quotation updated successfully!" : "Quotation created successfully!"
+        );
       }
 
       onSuccess?.(savedQuote);
@@ -337,7 +453,9 @@ export function QuotationBuilderModal({
           <div className="flex items-center gap-2">
             <Receipt className="h-5 w-5 text-primary" />
             <DialogTitle className="text-xl">
-              {quotationToEdit ? "Edit Quotation " + quotationToEdit.quote_number : "Create New Quotation"}
+              {quotationToEdit
+                ? "Edit Quotation " + quotationToEdit.quote_number
+                : "Create New Quotation"}
             </DialogTitle>
           </div>
           <DialogDescription>
@@ -347,32 +465,277 @@ export function QuotationBuilderModal({
 
         <ScrollArea className="flex-1 p-6">
           <div className="space-y-6">
-            {/* Top Row: Title & Scope */}
+            {/* Top Row: Title & Dates */}
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="sm:col-span-2 space-y-1.5">
-                <Label htmlFor="q_title">Quotation Subject / Service Title *</Label>
+              <div className="sm:col-span-2 space-y-1">
+                <Label htmlFor="quote_title">Quotation Subject / Title *</Label>
                 <Input
-                  id="q_title"
+                  id="quote_title"
+                  placeholder="e.g. Private Limited Company Registration & GST Filing"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Private Limited Company Registration & GST Package"
                   required
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="q_valid">Valid Until Date</Label>
-                <Input
-                  id="q_valid"
-                  type="date"
-                  value={validUntil}
-                  onChange={(e) => setValidUntil(e.target.value)}
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="issue_date">Issue Date</Label>
+                  <Input
+                    id="issue_date"
+                    type="date"
+                    value={issueDate}
+                    onChange={(e) => setIssueDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="valid_until">Valid Until</Label>
+                  <Input
+                    id="valid_until"
+                    type="date"
+                    value={validUntil}
+                    onChange={(e) => setValidUntil(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Client Details Section */}
-            <div className="rounded-lg border p-4 bg-muted/20 space-y-4">
+            {/* Dynamic Issuing Entity & Signatures (Collapsible / Customizable) */}
+            <div className="rounded-lg border bg-card p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-primary" />
+                  <span className="font-semibold text-xs text-foreground">
+                    Issuing Entity & Official Stamp / Signature
+                  </span>
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    ({companyName || "Default Entity"})
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowEntityDetails(!showEntityDetails)}
+                >
+                  {showEntityDetails ? (
+                    <>
+                      Hide Details <ChevronUp className="h-3.5 w-3.5" />
+                    </>
+                  ) : (
+                    <>
+                      Customize Entity & Signatures <ChevronDown className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {showEntityDetails && (
+                <div className="pt-2 border-t space-y-4">
+                  <p className="text-[11px] text-muted-foreground">
+                    You can override the issuing business name, address, GSTIN, digital signature, and official seal for this quotation (useful when serving different client entities or sister companies).
+                  </p>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs" htmlFor="company_name">Issuing Company Name</Label>
+                      <Input
+                        id="company_name"
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                        placeholder="Deccan Filings"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs" htmlFor="company_phone">Company Phone</Label>
+                      <Input
+                        id="company_phone"
+                        value={companyPhone}
+                        onChange={(e) => setCompanyPhone(e.target.value)}
+                        placeholder="+91 99999 99999"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs" htmlFor="company_email">Billing Email</Label>
+                      <Input
+                        id="company_email"
+                        type="email"
+                        value={companyEmail}
+                        onChange={(e) => setCompanyEmail(e.target.value)}
+                        placeholder="billing@example.com"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs" htmlFor="company_gstin">Issuing GSTIN</Label>
+                      <Input
+                        id="company_gstin"
+                        value={companyGstin}
+                        onChange={(e) => setCompanyGstin(e.target.value)}
+                        placeholder="36AAAAA0000A1Z5"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs" htmlFor="company_pan">Issuing PAN</Label>
+                      <Input
+                        id="company_pan"
+                        value={companyPan}
+                        onChange={(e) => setCompanyPan(e.target.value)}
+                        placeholder="AAAAA0000A"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs" htmlFor="company_address">Address / City</Label>
+                      <Input
+                        id="company_address"
+                        value={companyAddress}
+                        onChange={(e) => setCompanyAddress(e.target.value)}
+                        placeholder="Hyderabad, Telangana"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Signatures & Stamps Dynamic Uploaders */}
+                  <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t">
+                    {/* Authorized Signature */}
+                    <div className="p-3 border rounded-md bg-muted/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium flex items-center gap-1.5">
+                          <PenTool className="h-3.5 w-3.5 text-primary" />
+                          Authorized Signature
+                        </Label>
+                        <input
+                          type="file"
+                          ref={sigInputRef}
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleUploadFile("signature_url", f);
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={uploadingSig}
+                          onClick={() => sigInputRef.current?.click()}
+                          className="h-7 text-[11px] gap-1"
+                        >
+                          {uploadingSig ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Upload className="h-3 w-3" />
+                          )}
+                          Upload Signature
+                        </Button>
+                      </div>
+
+                      <Input
+                        className="h-7 text-xs"
+                        placeholder="Or enter signature image URL..."
+                        value={signatureUrl}
+                        onChange={(e) => setSignatureUrl(e.target.value)}
+                      />
+
+                      {signatureUrl && (
+                        <div className="relative mt-2 p-2 border rounded bg-background flex items-center justify-center">
+                          <img
+                            src={signatureUrl}
+                            alt="Signature Preview"
+                            className="h-12 max-w-[160px] object-contain"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-1 right-1 h-5 w-5 text-muted-foreground hover:text-destructive"
+                            onClick={() => setSignatureUrl("")}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Official Stamp / Seal */}
+                    <div className="p-3 border rounded-md bg-muted/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium flex items-center gap-1.5">
+                          <Stamp className="h-3.5 w-3.5 text-primary" />
+                          Official Seal / Stamp
+                        </Label>
+                        <input
+                          type="file"
+                          ref={stampInputRef}
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleUploadFile("stamp_url", f);
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={uploadingStamp}
+                          onClick={() => stampInputRef.current?.click()}
+                          className="h-7 text-[11px] gap-1"
+                        >
+                          {uploadingStamp ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Upload className="h-3 w-3" />
+                          )}
+                          Upload Stamp
+                        </Button>
+                      </div>
+
+                      <Input
+                        className="h-7 text-xs"
+                        placeholder="Or enter stamp image URL..."
+                        value={stampUrl}
+                        onChange={(e) => setStampUrl(e.target.value)}
+                      />
+
+                      {stampUrl && (
+                        <div className="relative mt-2 p-2 border rounded bg-background flex items-center justify-center">
+                          <img
+                            src={stampUrl}
+                            alt="Stamp Preview"
+                            className="h-12 max-w-[100px] object-contain"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-1 right-1 h-5 w-5 text-muted-foreground hover:text-destructive"
+                            onClick={() => setStampUrl("")}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Client / Recipient Details */}
+            <div className="rounded-lg border bg-card p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 font-medium text-sm">
                   <User className="h-4 w-4 text-primary" />
@@ -507,7 +870,7 @@ export function QuotationBuilderModal({
                         <td className="p-2 space-y-1">
                           <Input
                             className="h-8 text-xs font-medium"
-                            placeholder="Service title e.g. Name Approval (RUN)"
+                            placeholder="Service title e.g. Professional Consultancy & Incorporation"
                             value={item.title}
                             onChange={(e) => handleItemChange(idx, "title", e.target.value)}
                           />
@@ -525,7 +888,9 @@ export function QuotationBuilderModal({
                             step="1"
                             className="h-8 text-center text-xs"
                             value={item.quantity}
-                            onChange={(e) => handleItemChange(idx, "quantity", parseFloat(e.target.value) || 0)}
+                            onChange={(e) =>
+                              handleItemChange(idx, "quantity", parseFloat(e.target.value) || 0)
+                            }
                           />
                         </td>
                         <td className="p-2 align-top">
@@ -535,7 +900,9 @@ export function QuotationBuilderModal({
                             step="0.01"
                             className="h-8 text-right text-xs"
                             value={item.unit_price}
-                            onChange={(e) => handleItemChange(idx, "unit_price", parseFloat(e.target.value) || 0)}
+                            onChange={(e) =>
+                              handleItemChange(idx, "unit_price", parseFloat(e.target.value) || 0)
+                            }
                           />
                         </td>
                         <td className="p-2.5 align-top text-right font-semibold text-foreground">
@@ -549,7 +916,7 @@ export function QuotationBuilderModal({
                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
                             onClick={() => handleRemoveItem(idx)}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </td>
                       </tr>

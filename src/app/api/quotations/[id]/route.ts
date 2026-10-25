@@ -100,6 +100,16 @@ export async function PATCH(
       notes,
       terms,
       items,
+      company_name,
+      company_logo_url,
+      company_address,
+      company_phone,
+      company_email,
+      company_website,
+      gstin,
+      pan,
+      signature_url,
+      stamp_url,
     } = body;
 
     const updates: Record<string, any> = {
@@ -116,6 +126,16 @@ export async function PATCH(
     if (valid_until !== undefined) updates.valid_until = valid_until || null;
     if (notes !== undefined) updates.notes = notes || null;
     if (terms !== undefined) updates.terms = terms || null;
+    if (company_name !== undefined) updates.company_name = company_name?.trim() || null;
+    if (company_logo_url !== undefined) updates.company_logo_url = company_logo_url?.trim() || null;
+    if (company_address !== undefined) updates.company_address = company_address?.trim() || null;
+    if (company_phone !== undefined) updates.company_phone = company_phone?.trim() || null;
+    if (company_email !== undefined) updates.company_email = company_email?.trim() || null;
+    if (company_website !== undefined) updates.company_website = company_website?.trim() || null;
+    if (gstin !== undefined) updates.gstin = gstin?.trim() || null;
+    if (pan !== undefined) updates.pan = pan?.trim() || null;
+    if (signature_url !== undefined) updates.signature_url = signature_url?.trim() || null;
+    if (stamp_url !== undefined) updates.stamp_url = stamp_url?.trim() || null;
 
     if (Array.isArray(items)) {
       const totals = calculateQuotationTotals({

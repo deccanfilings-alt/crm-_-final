@@ -70,6 +70,8 @@ export async function POST(request: Request) {
       bank_beneficiary_name: body.bank_beneficiary_name?.trim() || null,
       upi_id: body.upi_id?.trim() || null,
       upi_qr_url: body.upi_qr_url?.trim() || null,
+      signature_url: body.signature_url !== undefined ? (body.signature_url?.trim() || null) : null,
+      stamp_url: body.stamp_url !== undefined ? (body.stamp_url?.trim() || null) : null,
       default_terms: body.default_terms !== undefined ? body.default_terms : DEFAULT_QUOTATION_SETTINGS.default_terms,
       quote_prefix: body.quote_prefix?.trim() || 'DF-QT-',
       next_quote_number: Math.max(1, parseInt(body.next_quote_number, 10) || 1001),

@@ -762,6 +762,8 @@ export interface QuotationSettings {
   bank_beneficiary_name?: string | null;
   upi_id?: string | null;
   upi_qr_url?: string | null;
+  signature_url?: string | null;
+  stamp_url?: string | null;
   default_terms?: string | null;
   quote_prefix: string;
   next_quote_number: number;
@@ -813,6 +815,17 @@ export interface Quotation {
   client_company?: string | null;
   client_address?: string | null;
   client_gstin?: string | null;
+  
+  company_name?: string | null;
+  company_logo_url?: string | null;
+  company_address?: string | null;
+  company_phone?: string | null;
+  company_email?: string | null;
+  company_website?: string | null;
+  gstin?: string | null;
+  pan?: string | null;
+  signature_url?: string | null;
+  stamp_url?: string | null;
   
   notes?: string | null;
   terms?: string | null;
