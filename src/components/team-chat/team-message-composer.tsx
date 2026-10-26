@@ -372,7 +372,12 @@ export function TeamMessageComposer({
       (m) => m[1]
     )
     const taggedIds = Array.from(new Set([...contactIdMatches, ...Array.from(taggedContacts.keys())]))
-    const mentionedIds = Array.from(mentionedUsers.keys())
+    const mentionedIds = Array.from(mentionedUsers.entries())
+      .filter(([id, member]: [string, any]) => {
+        const name = member?.name || member?.full_name || ''
+        return name && content.toLowerCase().includes(`@${name.toLowerCase()}`)
+      })
+      .map(([id]) => id)
 
     setSending(true)
     try {

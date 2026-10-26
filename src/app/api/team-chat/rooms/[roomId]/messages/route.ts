@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { canViewRoom } from '@/lib/team-chat/room-access'
+import { buildNotificationRows } from '@/lib/team-chat/mentions'
 
 export async function GET(
   request: Request,
@@ -267,7 +268,7 @@ export async function POST(
     // Verify room belongs to this account
     const { data: room, error: roomErr } = await supabaseAdmin()
       .from('team_rooms')
-      .select('id, name')
+      .select('id, name, is_direct, dm_user_ids, is_private')
       .eq('id', roomId)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -344,6 +345,41 @@ export async function POST(
     if (insertError || !message) {
       console.error('[team-chat] Failed to insert message:', insertError)
       return NextResponse.json({ error: 'Failed to send message' }, { status: 500 })
+    }
+
+    // Create notifications for mentioned teammates and DM partners
+    try {
+      const notificationRows = buildNotificationRows({
+        accountId,
+        senderId: user.id,
+        senderName: profile?.full_name || 'Teammate',
+        roomId,
+        roomName: room.name,
+        isDirect: Boolean(room.is_direct),
+        dmUserIds: room.dm_user_ids,
+        mentionedUserIds: finalMentionedIds,
+        content: trimmedContent,
+        messageId: message.id,
+      })
+
+      if (notificationRows.length > 0) {
+        let finalRows = notificationRows
+        if (room.is_private) {
+          const { data: members } = await supabaseAdmin()
+            .from('team_room_members')
+            .select('user_id')
+            .eq('room_id', roomId)
+            .in('user_id', notificationRows.map((r) => r.user_id))
+          const allowedUsers = new Set((members || []).map((m: any) => m.user_id))
+          finalRows = notificationRows.filter((r) => allowedUsers.has(r.user_id))
+        }
+
+        if (finalRows.length > 0) {
+          await supabaseAdmin().from('notifications').insert(finalRows)
+        }
+      }
+    } catch (notifErr) {
+      console.error('[team-chat] Failed to create notifications:', notifErr)
     }
 
     // Resolve tagged contacts info if any

@@ -124,6 +124,16 @@ export default function TeamChatPage() {
     return allRooms.find((r) => r.id === activeRoomId) || null
   }, [allRooms, activeRoomId])
 
+  const memberNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    teammates.forEach((t) => {
+      if (t.user_id && t.full_name) {
+        map[t.user_id] = t.full_name
+      }
+    })
+    return map
+  }, [teammates])
+
   // Filter messages based on in-chat search
   const visibleMessages = useMemo(() => {
     if (!searchQuery.trim()) return messages
@@ -706,6 +716,24 @@ export default function TeamChatPage() {
     }
   }
 
+// Handle deep-links ?room=<roomId>&m=<messageId>
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const params = new URLSearchParams(window.location.search)
+    const targetRoom = params.get("room")
+    const targetMessage = params.get("m")
+
+    if (targetRoom && targetRoom !== activeRoomId) {
+      setActiveRoomId(targetRoom)
+    }
+    if (targetMessage) {
+      const timer = setTimeout(() => {
+        handleJumpToMessage(targetMessage)
+      }, 600)
+      return () => clearTimeout(timer)
+    }
+  }, [activeRoomId, handleJumpToMessage])
+
   const isDm = Boolean(activeRoom?.is_direct)
   const partner = activeRoom?.dm_partner
   const partnerName = partner?.full_name || "Teammate"
@@ -962,6 +990,7 @@ export default function TeamChatPage() {
                         key={msg.id}
                         message={msg}
                         isGrouped={isGrouped}
+                        memberNames={memberNames}
                         currentUserId={user?.id}
                         userRole={accountRole || undefined}
                         onToggleReaction={handleToggleReaction}

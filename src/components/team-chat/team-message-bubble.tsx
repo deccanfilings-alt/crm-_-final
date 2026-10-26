@@ -25,11 +25,13 @@ import {
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { splitLinks } from "@/lib/team-chat/linkify"
+import { buildMentionRegex } from "@/lib/team-chat/mentions"
 import type { TeamMessage, TaggedContactInfo, TeamChatAttachment } from "@/types"
 
 interface TeamMessageBubbleProps {
   message: TeamMessage
   isGrouped?: boolean
+  memberNames?: Record<string, string>
   currentUserId?: string
   userRole?: string
   onToggleReaction: (messageId: string, emoji: string) => void
@@ -44,6 +46,7 @@ interface TeamMessageBubbleProps {
 export function TeamMessageBubble({
   message,
   isGrouped = false,
+  memberNames = {},
   currentUserId,
   userRole = "agent",
   onToggleReaction,
@@ -107,8 +110,7 @@ export function TeamMessageBubble({
       return null
     }
 
-    // Split text by contact tokens `@{contact:<id>:<name>}` and `@mentions`
-    const regex = /(@\{contact:[a-f0-9-]+:[^}]+\}|@[a-zA-Z0-9_\s]+?\b)/g
+    const regex = buildMentionRegex(memberNames, message.mentioned_user_ids || [])
     const parts = text.split(regex)
 
     return parts.map((part, index) => {
