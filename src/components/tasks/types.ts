@@ -5,9 +5,15 @@ export interface ActionItem {
   assignee_id: string;
   title: string;
   description: string | null;
-  status: 'todo' | 'in_progress' | 'review' | 'completed';
+  status: 'todo' | 'in_progress' | 'review' | 'completed' | 'cancelled';
   priority: 'low' | 'normal' | 'high' | 'urgent';
   target_date: string;
+  due_at?: string | null;
+  completed_at?: string | null;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
+  conversation_id?: string | null;
+  source?: string;
   created_at: string;
   contact_id?: string | null;
   deal_id?: string | null;
