@@ -47,23 +47,92 @@ export async function GET(
       return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
-    // Fetch messages for this room (limit to last 200 messages)
-    const { data: rawMessages, error: msgError } = await supabaseAdmin()
-      .from('team_messages')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('created_at', { ascending: true })
-      .limit(200)
+    // Query params for pagination and live refreshes
+    const url = new URL(request.url)
+    const limitParam = parseInt(url.searchParams.get('limit') || '50', 10)
+    const limit = Math.min(Math.max(isNaN(limitParam) ? 50 : limitParam, 1), 100)
+    const before = url.searchParams.get('before')
+    const idsParam = url.searchParams.get('ids')
 
-    if (msgError) {
-      console.error('[team-chat] Error fetching messages:', msgError)
-      return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
+    let messages: any[] = []
+    let has_more = false
+
+    if (idsParam) {
+      const requestedIds = idsParam
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .slice(0, 20)
+
+      if (requestedIds.length > 0) {
+        const { data: idRows, error: idErr } = await supabaseAdmin()
+          .from('team_messages')
+          .select('*')
+          .eq('room_id', roomId)
+          .in('id', requestedIds)
+          .order('created_at', { ascending: true })
+
+        if (idErr) {
+          console.error('[team-chat] Error fetching messages by IDs:', idErr)
+          return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
+        }
+        messages = idRows || []
+      }
+      has_more = false
+    } else {
+      let q = supabaseAdmin()
+        .from('team_messages')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: false })
+        .limit(limit + 1)
+
+      if (before) {
+        q = q.lt('created_at', before)
+      }
+
+      const { data: rawRows, error: msgError } = await q
+      if (msgError) {
+        console.error('[team-chat] Error fetching messages:', msgError)
+        return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
+      }
+
+      const rows = rawRows || []
+      has_more = rows.length > limit
+      const pageRows = rows.slice(0, limit)
+      messages = pageRows.reverse()
     }
 
-    const messages = rawMessages || []
+    // Resolve reply quotes that might not be in the current batch
+    const msgMap = new Map(messages.map((m: any) => [m.id, m]))
+    const missingReplyIds = Array.from(
+      new Set(
+        messages
+          .map((m: any) => m.reply_to_id)
+          .filter((rid: string | null) => rid && !msgMap.has(rid))
+      )
+    )
 
-    // Collect sender IDs and tagged contact IDs
-    const senderIds = Array.from(new Set(messages.map((m: any) => m.sender_id).filter(Boolean)))
+    const extraSenderIds: string[] = []
+    if (missingReplyIds.length > 0) {
+      const { data: replyRows } = await supabaseAdmin()
+        .from('team_messages')
+        .select('*')
+        .eq('room_id', roomId)
+        .in('id', missingReplyIds)
+
+      for (const rm of replyRows || []) {
+        msgMap.set(rm.id, rm)
+        if (rm.sender_id) {
+          extraSenderIds.push(rm.sender_id)
+        }
+      }
+    }
+
+    // Collect sender IDs (including quoted reply senders) and tagged contact IDs
+    const senderIds = Array.from(
+      new Set([...messages.map((m: any) => m.sender_id), ...extraSenderIds].filter(Boolean))
+    )
     const allTaggedContactIds = Array.from(
       new Set(
         messages
@@ -129,7 +198,6 @@ export async function GET(
       reactionsMap.set(r.message_id, list)
     }
 
-    const msgMap = new Map(messages.map((m: any) => [m.id, m]))
     // Enrich messages
     const enrichedMessages = messages.map((m: any) => {
       const replyMsg = m.reply_to_id ? msgMap.get(m.reply_to_id) : null
@@ -161,6 +229,7 @@ export async function GET(
     return NextResponse.json({
       room,
       messages: enrichedMessages,
+      has_more,
     })
   } catch (error) {
     console.error('[team-chat] GET room messages unexpected error:', error)

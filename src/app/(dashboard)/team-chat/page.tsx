@@ -71,6 +71,19 @@ export default function TeamChatPage() {
   const [teammates, setTeammates] = useState<TeammateMember[]>([])
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
   const [messages, setMessages] = useState<TeamMessage[]>([])
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [showScrollDown, setShowScrollDown] = useState(false)
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const messagesRef = useRef<TeamMessage[]>(messages)
+  messagesRef.current = messages
+  const hasMoreRef = useRef(false)
+  hasMoreRef.current = hasMore
+  const loadingOlderRef = useRef(false)
+  loadingOlderRef.current = loadingOlder
+  const activeRoomIdRef = useRef(activeRoomId)
+  activeRoomIdRef.current = activeRoomId
   const [loadingRooms, setLoadingRooms] = useState(true)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [selectedContact, setSelectedContact] = useState<TaggedContactInfo | null>(null)
@@ -127,15 +140,72 @@ export default function TeamChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior })
   }, [])
 
-  const prevMsgCountRef = useRef(0)
-  useEffect(() => {
-    if (messages.length > prevMsgCountRef.current) {
-      requestAnimationFrame(() =>
-        scrollToBottom(prevMsgCountRef.current === 0 ? "auto" : "smooth")
-      )
+  // Load older messages for reverse pagination
+  const loadOlderMessages = useCallback(async (): Promise<boolean> => {
+    if (loadingOlderRef.current || !hasMoreRef.current || !activeRoomIdRef.current) {
+      return false
     }
-    prevMsgCountRef.current = messages.length
-  }, [messages.length, scrollToBottom])
+    const currentMsgs = messagesRef.current
+    if (currentMsgs.length === 0) return false
+
+    const oldestTimestamp = currentMsgs[0].created_at
+    setLoadingOlder(true)
+    loadingOlderRef.current = true
+
+    const scrollContainer = scrollContainerRef.current
+    const oldScrollHeight = scrollContainer ? scrollContainer.scrollHeight : 0
+    const oldScrollTop = scrollContainer ? scrollContainer.scrollTop : 0
+
+    try {
+      const res = await fetch(
+        `/api/team-chat/rooms/${activeRoomIdRef.current}/messages?limit=50&before=${encodeURIComponent(oldestTimestamp)}`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        const older = data.messages || []
+        const more = Boolean(data.has_more)
+        setHasMore(more)
+        hasMoreRef.current = more
+
+        if (older.length > 0) {
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => m.id))
+            const dedupedOlder = older.filter((m: TeamMessage) => !existingIds.has(m.id))
+            return [...dedupedOlder, ...prev]
+          })
+
+          // Maintain scroll position after prepending older messages
+          requestAnimationFrame(() => {
+            if (scrollContainer) {
+              const newScrollHeight = scrollContainer.scrollHeight
+              scrollContainer.scrollTop = newScrollHeight - oldScrollHeight + oldScrollTop
+            }
+          })
+          return true
+        }
+      }
+      return false
+    } catch (err) {
+      console.error("[team-chat] Failed to load older messages:", err)
+      return false
+    } finally {
+      setLoadingOlder(false)
+      loadingOlderRef.current = false
+    }
+  }, [])
+
+  // Handle scroll in message container
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+
+    if (el.scrollTop < 200 && hasMoreRef.current && !loadingOlderRef.current) {
+      loadOlderMessages()
+    }
+
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    setShowScrollDown(distanceFromBottom > 150)
+  }, [loadOlderMessages])
 
   // Load rooms, DMs, and teammates
   const loadRooms = useCallback(async () => {
@@ -173,10 +243,18 @@ export default function TeamChatPage() {
   const loadMessages = useCallback(async (roomId: string) => {
     setLoadingMessages(true)
     try {
-      const res = await fetch(`/api/team-chat/rooms/${roomId}/messages`)
+      const res = await fetch(`/api/team-chat/rooms/${roomId}/messages?limit=50`)
       if (res.ok) {
         const data = await res.json()
-        setMessages(data.messages || [])
+        const msgs = data.messages || []
+        setMessages(msgs)
+        const more = Boolean(data.has_more)
+        setHasMore(more)
+        hasMoreRef.current = more
+
+        requestAnimationFrame(() => {
+          scrollToBottom("auto")
+        })
       }
     } catch (err) {
       console.error("[team-chat] Failed to fetch messages:", err)
@@ -184,7 +262,7 @@ export default function TeamChatPage() {
     } finally {
       setLoadingMessages(false)
     }
-  }, [])
+  }, [scrollToBottom])
 
   useEffect(() => {
     if (activeRoomId) {
@@ -262,6 +340,7 @@ export default function TeamChatPage() {
         },
         async (payload) => {
           const newMsg = payload.new as any
+          if (!newMsg) return
 
           // Sound chime & notification for messages from other users
           if (user && newMsg.sender_id !== user.id) {
@@ -278,7 +357,29 @@ export default function TeamChatPage() {
             }
           }
 
-          loadMessages(activeRoomId)
+          try {
+            const res = await fetch(`/api/team-chat/rooms/${activeRoomId}/messages?ids=${newMsg.id}`)
+            if (res.ok) {
+              const data = await res.json()
+              const fetched = (data.messages || [])[0]
+              if (fetched) {
+                setMessages((prev) => {
+                  if (prev.some((m) => m.id === fetched.id)) return prev
+                  return [...prev, fetched]
+                })
+
+                // Auto-scroll rule: near bottom or own message
+                const el = scrollContainerRef.current
+                const isNearBottom = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 150 : true
+                const isMine = user && fetched.sender_id === user.id
+                if (isNearBottom || isMine) {
+                  requestAnimationFrame(() => scrollToBottom("smooth"))
+                }
+              }
+            }
+          } catch (e) {
+            console.error("[team-chat] Failed to fetch inserted message:", e)
+          }
         }
       )
       .on(
@@ -289,8 +390,22 @@ export default function TeamChatPage() {
           table: "team_messages",
           filter: `room_id=eq.${activeRoomId}`,
         },
-        () => {
-          loadMessages(activeRoomId)
+        async (payload) => {
+          const updatedMsg = payload.new as any
+          if (!updatedMsg) return
+
+          try {
+            const res = await fetch(`/api/team-chat/rooms/${activeRoomId}/messages?ids=${updatedMsg.id}`)
+            if (res.ok) {
+              const data = await res.json()
+              const fetched = (data.messages || [])[0]
+              if (fetched) {
+                setMessages((prev) => prev.map((m) => (m.id === fetched.id ? fetched : m)))
+              }
+            }
+          } catch (e) {
+            console.error("[team-chat] Failed to fetch updated message:", e)
+          }
         }
       )
       .on(
@@ -315,8 +430,26 @@ export default function TeamChatPage() {
           schema: "public",
           table: "team_message_reactions",
         },
-        () => {
-          loadMessages(activeRoomId)
+        async (payload) => {
+          const msgId = (payload.new as any)?.message_id ?? (payload.old as any)?.message_id
+          if (!msgId) return
+
+          // Only refetch if this message is currently loaded
+          const isLoaded = messagesRef.current.some((m) => m.id === msgId)
+          if (!isLoaded) return
+
+          try {
+            const res = await fetch(`/api/team-chat/rooms/${activeRoomId}/messages?ids=${msgId}`)
+            if (res.ok) {
+              const data = await res.json()
+              const fetched = (data.messages || [])[0]
+              if (fetched) {
+                setMessages((prev) => prev.map((m) => (m.id === fetched.id ? fetched : m)))
+              }
+            }
+          } catch (e) {
+            console.error("[team-chat] Failed to update reaction on message:", e)
+          }
         }
       )
       .subscribe()
@@ -542,14 +675,34 @@ export default function TeamChatPage() {
   }
 
   // Jump and highlight specific message (for quotes)
-  const handleJumpToMessage = (messageId: string) => {
-    const el = document.getElementById(`message-${messageId}`)
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" })
-      el.classList.add("bg-primary/20")
-      setTimeout(() => el.classList.remove("bg-primary/20"), 2000)
-    } else {
-      toast.info("Original message is further up in chat history")
+  const handleJumpToMessage = async (messageId: string) => {
+    let target = document.getElementById(`message-${messageId}`)
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" })
+      target.classList.add("bg-primary/20")
+      setTimeout(() => target?.classList.remove("bg-primary/20"), 2000)
+      return
+    }
+
+    let found = false
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (!hasMoreRef.current) break
+      const loaded = await loadOlderMessages()
+      if (!loaded) break
+
+      await new Promise((r) => setTimeout(r, 100))
+      target = document.getElementById(`message-${messageId}`)
+      if (target) {
+        found = true
+        target.scrollIntoView({ behavior: "smooth", block: "center" })
+        target.classList.add("bg-primary/20")
+        setTimeout(() => target?.classList.remove("bg-primary/20"), 2000)
+        break
+      }
+    }
+
+    if (!found) {
+      toast.info("That message is further back; scroll up to load more")
     }
   }
 
@@ -736,7 +889,16 @@ export default function TeamChatPage() {
             </div>
 
             {/* Message History */}
-            <div className="flex-1 overflow-y-auto py-4 space-y-1">
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto py-4 space-y-1 relative"
+            >
+              {loadingOlder && (
+                <div className="flex justify-center py-2 text-xs text-muted-foreground animate-pulse">
+                  Loading older messages...
+                </div>
+              )}
               {loadingMessages ? (
                 <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                   Loading message history...
@@ -820,6 +982,17 @@ export default function TeamChatPage() {
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Floating scroll-down button */}
+            {showScrollDown && (
+              <button
+                type="button"
+                onClick={() => scrollToBottom("smooth")}
+                className="absolute bottom-20 right-6 z-20 flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-all animate-in fade-in"
+              >
+                <span>↓ New messages</span>
+              </button>
+            )}
 
             {/* Live Typing Indicator */}
             {typingUsers.length > 0 && (
