@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { todayIST } from "@/lib/dates";
 
 export async function GET(req: Request) {
   const supabase = await createClient();
@@ -7,7 +8,7 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const targetDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const targetDate = searchParams.get('date') || todayIST();
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -30,15 +31,19 @@ export async function GET(req: Request) {
       agent:profiles!action_items_agent_id_fkey(full_name, avatar_url),
       assignee:profiles!action_items_assignee_id_fkey(full_name, avatar_url)
     `)
-    .eq('account_id', profile.account_id)
-    .order('created_at', { ascending: true });
+    .eq('account_id', profile.account_id);
 
   if (targetId) {
     query = query.eq('target_id', targetId);
   } else if (weekStart) {
     // Fetch tasks linked to any goal within this week (target_id is not null, target_date in the week)
+    const startDate = new Date(weekStart);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    const weekEnd = endDate.toISOString().split('T')[0];
     query = query.not('target_id', 'is', null)
-      .gte('target_date', weekStart);
+      .gte('target_date', weekStart)
+      .lte('target_date', weekEnd);
   } else if (overdue) {
     query = query.lt('target_date', targetDate).neq('status', 'completed');
   } else {
@@ -51,7 +56,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  // Sort order: priority (urgent -> low), then due_at (nulls last), then created_at
+  const priorityRank: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+  const sortedData = (data || []).sort((a: any, b: any) => {
+    const pDiff = (priorityRank[a.priority] ?? 2) - (priorityRank[b.priority] ?? 2);
+    if (pDiff !== 0) return pDiff;
+    if (a.due_at && b.due_at) {
+      const dDiff = new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+      if (dDiff !== 0) return dDiff;
+    } else if (a.due_at) {
+      return -1;
+    } else if (b.due_at) {
+      return 1;
+    }
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+
+  return NextResponse.json(sortedData);
 }
 
 export async function POST(req: Request) {
@@ -75,7 +96,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
     }
 
-    const tDate = target_date || new Date().toISOString().split('T')[0];
+    const tDate = target_date || todayIST();
     const finalAssigneeId = assignee_id || user.id;
 
     const { data, error } = await supabase
@@ -110,7 +131,7 @@ export async function POST(req: Request) {
           body: priority === 'urgent' || priority === 'high'
             ? `Priority: ${priority.toUpperCase()} • Due: ${tDate}`
             : `Assigned by ${profile.full_name || 'a teammate'} • Due: ${tDate}`,
-          link: '/tasks',
+          link: `/action-items?task=${data.id}`,
           read: false,
           metadata: { task_id: data.id, priority, target_date: tDate }
         });

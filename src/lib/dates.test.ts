@@ -1,10 +1,34 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { todayIST, toISTDateString, formatDateTimeIST, formatDateOnlyIST, getLateInfo } from './dates';
 
 describe('dates.ts - IST timezone utilities', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('todayIST returns a valid YYYY-MM-DD string', () => {
     const today = todayIST();
     expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('todayIST handles midnight transitions correctly using fake timers', () => {
+    // 2026-10-24 18:29:59 UTC is 2026-10-24 23:59:59 IST
+    vi.setSystemTime(new Date('2026-10-24T18:29:59.000Z'));
+    expect(todayIST()).toBe('2026-10-24');
+
+    // 2026-10-24 18:30:00 UTC is 2026-10-25 00:00:00 IST (midnight in India)
+    vi.setSystemTime(new Date('2026-10-24T18:30:00.000Z'));
+    expect(todayIST()).toBe('2026-10-25');
+
+    // 2026-10-25 02:00:00 UTC is 2026-10-25 07:30:00 IST
+    // Raw UTC toISOString().split('T')[0] would be 2026-10-25, and IST is 2026-10-25
+    vi.setSystemTime(new Date('2026-10-25T02:00:00.000Z'));
+    expect(todayIST()).toBe('2026-10-25');
+
+    // Between 00:00 UTC and 05:30 IST: e.g. 2026-10-24 20:00:00 UTC
+    // Raw UTC date is 2026-10-24, but in IST it's already 2026-10-25 01:30!
+    vi.setSystemTime(new Date('2026-10-24T20:00:00.000Z'));
+    expect(todayIST()).toBe('2026-10-25');
   });
 
   it('toISTDateString converts UTC timestamps to correct IST dates', () => {

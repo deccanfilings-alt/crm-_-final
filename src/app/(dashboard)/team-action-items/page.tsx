@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { format, addDays, subDays } from "date-fns";
 import { ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TeamPlanner } from "@/components/tasks/team-planner";
+import { TaskSheet } from "@/components/tasks/task-sheet";
 import type { ActionItem } from "@/components/tasks/types";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -31,13 +33,37 @@ const PRIORITY_COLORS: Record<string, string> = {
   urgent: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
-export default function TeamActionItemsPage() {
+function TeamActionItemsContent() {
+  const searchParams = useSearchParams();
+  const taskParam = searchParams?.get("task");
+
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [items, setItems] = useState<ActionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("plans");
+
+  // Task editor state
+  const [activeTask, setActiveTask] = useState<ActionItem | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Deep-link handling: ?task=<id>
+  useEffect(() => {
+    if (!taskParam) return;
+    fetch(`/api/action-items/${taskParam}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Task not found");
+        return res.json();
+      })
+      .then((task) => {
+        setActiveTask(task);
+        setSheetOpen(true);
+      })
+      .catch((err) => {
+        console.error("Failed to load deep linked task in team view:", err);
+      });
+  }, [taskParam]);
 
   const fetchItems = async (date: Date) => {
     setLoading(true);
@@ -79,14 +105,22 @@ export default function TeamActionItemsPage() {
   }, [items, priorityFilter, statusFilter]);
 
   const agentsWithZeroCompleted = useMemo(() => {
-    if (!isToday) return []; // Only alert for today
+    if (!isToday) return [];
     
-    // We only alert for agents who HAVE planned tasks but completed 0 of them.
-    // (If they didn't plan any tasks, that's also bad, but we focus on completed = 0)
     return groupedByAgent
       .filter(([_, group]) => group.items.length > 0 && group.items.every(i => i.status !== 'completed'))
       .map(([_, group]) => group.agent?.full_name || "Unknown User");
   }, [groupedByAgent, isToday]);
+
+  const handleUpdateTask = (updated: ActionItem) => {
+    setItems((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+    setActiveTask(updated);
+  };
+
+  const handleDeleteTask = (id: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== id));
+    setActiveTask(null);
+  };
 
   return (
     <RequireRole min="admin">
@@ -218,7 +252,11 @@ export default function TeamActionItemsPage() {
                       return (
                         <div 
                           key={item.id} 
-                          className={`flex items-center justify-between p-2.5 rounded-lg border transition-colors ${
+                          onClick={() => {
+                            setActiveTask(item);
+                            setSheetOpen(true);
+                          }}
+                          className={`flex items-center justify-between p-2.5 rounded-lg border transition-colors cursor-pointer hover:border-primary/50 ${
                             item.status === 'completed' ? 'bg-muted/50 border-transparent' : 'bg-background'
                           }`}
                         >
@@ -256,7 +294,23 @@ export default function TeamActionItemsPage() {
         )}
         </>
       )}
+
+      <TaskSheet
+        task={activeTask}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        onUpdate={handleUpdateTask}
+        onDelete={handleDeleteTask}
+      />
     </div>
   </RequireRole>
 );
+}
+
+export default function TeamActionItemsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-center text-muted-foreground">Loading team action items...</div>}>
+      <TeamActionItemsContent />
+    </Suspense>
+  );
 }

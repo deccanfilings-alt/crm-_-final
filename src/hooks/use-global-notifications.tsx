@@ -218,33 +218,7 @@ export function GlobalNotificationProvider({ children }: { children: React.React
       )
       .subscribe();
 
-    // 3. Realtime Tasks / Action Items stream
-    const tasksChannel = supabase
-      .channel(`realtime:tasks:${accountId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "action_items",
-          filter: `account_id=eq.${accountId}`,
-        },
-        (payload) => {
-          const task = payload.new as any;
-          // Notify if task is assigned to current user by someone else
-          if (task && task.assignee_id === user.id && task.agent_id !== user.id) {
-            dispatchAlert({
-              title: `📋 New Task Assigned: "${task.title}"`,
-              body: task.priority === "urgent" || task.priority === "high"
-                ? `Priority: ${task.priority.toUpperCase()} • Due: ${task.target_date || "Today"}`
-                : `Assigned to you • Due: ${task.target_date || "Today"}`,
-              link: `/tasks`,
-              type: "task_assigned",
-            });
-          }
-        }
-      )
-      .subscribe();
+    // Realtime tasks alerts are delivered via persistent notification table to prevent duplicate pop-ups
 
     // Seed assigned agents map so we don't alert on existing assignments or subsequent updates
     supabase
@@ -294,7 +268,7 @@ export function GlobalNotificationProvider({ children }: { children: React.React
       )
       .subscribe();
 
-    channelsRef.current = [notificationsChannel, tasksChannel, conversationsChannel];
+    channelsRef.current = [notificationsChannel, conversationsChannel];
 
     return () => {
       channelsRef.current.forEach((ch) => supabase.removeChannel(ch));

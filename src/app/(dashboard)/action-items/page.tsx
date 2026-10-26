@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { format, addDays, subDays, startOfWeek } from "date-fns";
-import { ChevronLeft, ChevronRight, Plus, Kanban, List as ListIcon, Calendar as CalendarIcon, Target, X } from "lucide-react";
+import { useEffect, useState, useMemo, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { format, startOfWeek } from "date-fns";
+import { Plus, Kanban, List as ListIcon, Calendar as CalendarIcon, Target } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,6 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useMemo } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { TaskBoard } from "@/components/tasks/task-board";
@@ -106,18 +106,49 @@ function AddTaskDialog({
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────
-export default function ActionItemsPage() {
-  const { user } = useAuth();
+// ── Content Component ──────────────────────────────────────────────────────
+function ActionItemsContent() {
+  const { user, isAdmin, isOwner } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const taskParam = searchParams?.get("task");
+
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [items, setItems] = useState<ActionItem[]>([]);
   const [overdueItems, setOverdueItems] = useState<ActionItem[]>([]);
-  const [plannerTasks, setPlannerTasks] = useState<ActionItem[]>([]);
+  const [, setPlannerTasks] = useState<ActionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTask, setActiveTask] = useState<ActionItem | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("planner");
   const [showCancelled, setShowCancelled] = useState(false);
+
+  // Deep-link handling: ?task=<id>
+  useEffect(() => {
+    if (!taskParam) return;
+    fetch(`/api/action-items/${taskParam}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Task not found");
+        return res.json();
+      })
+      .then((task) => {
+        // If user is admin/owner and task does not belong to user, redirect to team view
+        if (
+          user &&
+          (isAdmin || isOwner) &&
+          task.agent_id !== user.id &&
+          task.assignee_id !== user.id
+        ) {
+          router.replace(`/team-action-items?task=${task.id}`);
+          return;
+        }
+        setActiveTask(task);
+        setSheetOpen(true);
+      })
+      .catch((err) => {
+        console.error("Failed to load deep-linked task:", err);
+      });
+  }, [taskParam, user, isAdmin, isOwner, router]);
 
   const activeItems = useMemo(() => {
     return items.filter((i) => showCancelled || i.status !== "cancelled");
@@ -132,7 +163,6 @@ export default function ActionItemsPage() {
       const [res, overdueRes, planRes] = await Promise.all([
         fetch(`/api/action-items?date=${dateStr}`),
         fetch(`/api/action-items?date=${dateStr}&overdue=true`),
-        // Fetch tasks linked to this week's plan (no date filter, just target_id presence)
         fetch(`/api/action-items?week_start=${weekStart}`),
       ]);
 
@@ -153,7 +183,6 @@ export default function ActionItemsPage() {
         );
       }
 
-      // Planner tasks: linked to weekly goals, not already in today's list
       if (planRes.ok) {
         const planData = await planRes.json();
         const todayIds = new Set(data.map((i: any) => i.id));
@@ -327,5 +356,13 @@ export default function ActionItemsPage() {
         onDelete={handleDeleteTask}
       />
     </div>
+  );
+}
+
+export default function ActionItemsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-center text-muted-foreground">Loading action items...</div>}>
+      <ActionItemsContent />
+    </Suspense>
   );
 }

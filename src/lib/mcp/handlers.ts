@@ -2,6 +2,7 @@
 import { engineSendText, engineSendTemplate } from '@/lib/automations/meta-send';
 // phone-utils
 import { findExistingContact, canonicalPhone } from '@/lib/contacts/dedupe';
+import { todayIST } from '@/lib/dates';
 import type { MCPToolCallParams, MCPToolResult } from './types';
 
 export const CONTACT_RELATIONS =
@@ -845,7 +846,7 @@ export async function executeMCPTool(
               agent_id: actingUserId,
               assignee_id: actingUserId,
               title,
-              target_date: args.target_date || new Date().toISOString().split('T')[0],
+              target_date: args.target_date || todayIST(),
               contact_id: args.contact_id || null,
               status: 'todo',
               source: 'mcp',
