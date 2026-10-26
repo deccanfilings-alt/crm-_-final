@@ -66,6 +66,7 @@ interface Member {
   avatar_url: string | null;
   role: AccountRole;
   joined_at: string;
+  team?: string | null;
 }
 
 interface Invitation {
@@ -160,6 +161,44 @@ export function MembersTab() {
   useEffect(() => {
     void loadEverything();
   }, [loadEverything]);
+
+  async function handleTeamChange(member: Member, nextTeam: string) {
+    const normalizedTeam = nextTeam === 'none' ? null : nextTeam;
+    const previousTeam = member.team;
+    setPendingMemberAction(member.user_id);
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.user_id === member.user_id ? { ...m, team: normalizedTeam } : m,
+      ),
+    );
+    try {
+      const res = await fetch(`/api/account/members/${member.user_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team: normalizedTeam }),
+      });
+      if (!res.ok) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.user_id === member.user_id ? { ...m, team: previousTeam } : m,
+          ),
+        );
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Failed to update team');
+        return;
+      }
+      toast.success(`Updated team for ${member.full_name || 'member'}`);
+    } catch (err) {
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === member.user_id ? { ...m, team: previousTeam } : m,
+        ),
+      );
+      toast.error('Could not reach the server');
+    } finally {
+      setPendingMemberAction(null);
+    }
+  }
 
   async function handleRoleChange(member: Member, nextRole: AccountRole) {
     if (member.role === nextRole) return;
@@ -342,6 +381,30 @@ export function MembersTab() {
                       inline. Items align to the start on mobile so the
                       role dropdown lines up under the avatar. */}
                   <div className="flex items-center gap-2 sm:gap-3">
+                    {/* Team selector */}
+                    {canManageMembers ? (
+                      <Select
+                        value={member.team?.toLowerCase() || 'none'}
+                        onValueChange={(val) => val && handleTeamChange(member, val)}
+                      >
+                        <SelectTrigger
+                          className="w-28 bg-muted border-border text-foreground text-xs h-9"
+                          disabled={isBusy}
+                        >
+                          <SelectValue placeholder="Team" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No Team</SelectItem>
+                          <SelectItem value="registrations">Registrations</SelectItem>
+                          <SelectItem value="accounting">Accounting</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : member.team ? (
+                      <Badge variant="outline" className="text-[11px] capitalize">
+                        {member.team}
+                      </Badge>
+                    ) : null}
+
                     {/* Role display / editor. Inline Select is admin+
                         only AND not allowed on the owner row (owner
                         changes go through transfer, which lands later). */}

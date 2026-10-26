@@ -67,6 +67,7 @@ export interface AccountMember {
   avatar_url: string | null;
   role: AccountRole;
   joined_at: string;
+  team?: string | null;
 }
 
 /**

@@ -200,3 +200,57 @@ DROP POLICY IF EXISTS action_items_delete ON action_items;
 CREATE POLICY action_items_delete ON action_items FOR DELETE
   USING (is_account_member(account_id)
          AND (agent_id = auth.uid() OR is_account_member(account_id, 'admin')));
+
+-- ============================================================
+-- §4. Per-person stats for admins
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.task_stats(p_from DATE, p_to DATE)
+RETURNS TABLE (
+  user_id UUID,
+  full_name TEXT,
+  team TEXT,
+  open_count BIGINT,
+  overdue_count BIGINT,
+  due_today_count BIGINT,
+  completed_count BIGINT,
+  completed_on_time BIGINT,
+  avg_days_late NUMERIC,
+  oldest_overdue_date DATE
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH me AS (
+    SELECT account_id FROM profiles WHERE user_id = auth.uid()
+  ),
+  allowed AS (
+    SELECT me.account_id FROM me WHERE is_account_member(me.account_id, 'admin')
+  ),
+  today AS (
+    SELECT (NOW() AT TIME ZONE 'Asia/Kolkata')::date AS d
+  )
+  SELECT
+    p.user_id,
+    p.full_name,
+    p.team,
+    COUNT(a.id) FILTER (WHERE a.status NOT IN ('completed', 'cancelled')),
+    COUNT(a.id) FILTER (WHERE a.status NOT IN ('completed', 'cancelled') AND a.target_date < (SELECT d FROM today)),
+    COUNT(a.id) FILTER (WHERE a.status NOT IN ('completed', 'cancelled') AND a.target_date = (SELECT d FROM today)),
+    COUNT(a.id) FILTER (WHERE a.status = 'completed'
+                          AND (a.completed_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN p_from AND p_to),
+    COUNT(a.id) FILTER (WHERE a.status = 'completed'
+                          AND (a.completed_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN p_from AND p_to
+                          AND (a.completed_at AT TIME ZONE 'Asia/Kolkata')::date <= a.target_date),
+    ROUND(AVG(GREATEST(0, (a.completed_at AT TIME ZONE 'Asia/Kolkata')::date - a.target_date))
+          FILTER (WHERE a.status = 'completed'
+                    AND (a.completed_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN p_from AND p_to), 1),
+    MIN(a.target_date) FILTER (WHERE a.status NOT IN ('completed', 'cancelled') AND a.target_date < (SELECT d FROM today))
+  FROM profiles p
+  JOIN allowed ON p.account_id = allowed.account_id
+  LEFT JOIN action_items a ON a.assignee_id = p.user_id AND a.account_id = allowed.account_id
+  GROUP BY p.user_id, p.full_name, p.team
+  ORDER BY 5 DESC, p.full_name;
+$$;
+GRANT EXECUTE ON FUNCTION public.task_stats(DATE, DATE) TO authenticated;

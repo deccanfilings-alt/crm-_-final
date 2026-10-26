@@ -1,3 +1,4 @@
+import { supabaseAdmin } from "@/lib/flows/admin-client";
 // ============================================================
 // /api/account/members/[userId]
 //
@@ -58,35 +59,56 @@ export async function PATCH(
     const { userId } = await params;
 
     const body = (await request.json().catch(() => null)) as
-      | { role?: unknown }
+      | { role?: unknown; team?: unknown }
       | null;
     const role = body?.role;
+    const team = body?.team;
 
-    if (!isAccountRole(role)) {
+    if (role === undefined && team === undefined) {
       return NextResponse.json(
-        { error: "'role' must be one of owner, admin, agent, viewer" },
+        { error: "Either 'role' or 'team' must be provided" },
         { status: 400 },
       );
     }
 
-    // The RPC blocks promotion to / demotion from owner, but
-    // surface the friendlier 400 before crossing the wire too.
-    if (role === "owner") {
-      return NextResponse.json(
-        {
-          error:
-            "Use POST /api/account/transfer-ownership to promote a member to owner",
-        },
-        { status: 400 },
-      );
+    if (team !== undefined) {
+      const teamValue = typeof team === "string" ? team.trim() : null;
+      const { error: teamErr } = await supabaseAdmin()
+        .from("profiles")
+        .update({ team: teamValue || null })
+        .eq("user_id", userId)
+        .eq("account_id", ctx.accountId);
+
+      if (teamErr) {
+        return NextResponse.json({ error: teamErr.message }, { status: 500 });
+      }
     }
 
-    const { error } = await ctx.supabase.rpc("set_member_role", {
-      p_user_id: userId,
-      p_new_role: role,
-    });
+    if (role !== undefined) {
+      if (!isAccountRole(role)) {
+        return NextResponse.json(
+          { error: "'role' must be one of owner, admin, agent, viewer" },
+          { status: 400 },
+        );
+      }
 
-    if (error) return rpcErrorToResponse(error);
+      if (role === "owner") {
+        return NextResponse.json(
+          {
+            error:
+              "Use POST /api/account/transfer-ownership to promote a member to owner",
+          },
+          { status: 400 },
+        );
+      }
+
+      const { error } = await ctx.supabase.rpc("set_member_role", {
+        p_user_id: userId,
+        p_new_role: role,
+      });
+
+      if (error) return rpcErrorToResponse(error);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

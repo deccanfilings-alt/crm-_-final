@@ -12,7 +12,7 @@ export async function GET(req: Request) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('account_id')
+    .select('account_id, account_role')
     .eq('user_id', user.id)
     .single();
 
@@ -21,6 +21,7 @@ export async function GET(req: Request) {
   }
 
   const overdue = searchParams.get('overdue') === 'true';
+  const scope = searchParams.get('scope');
   const targetId = searchParams.get('target_id');
   const weekStart = searchParams.get('week_start'); // fetch all plan-linked tasks for a week
 
@@ -28,12 +29,21 @@ export async function GET(req: Request) {
     .from('action_items')
     .select(`
       *,
-      agent:profiles!action_items_agent_id_fkey(full_name, avatar_url),
-      assignee:profiles!action_items_assignee_id_fkey(full_name, avatar_url)
+      agent:profiles!action_items_agent_id_fkey(full_name, avatar_url, team),
+      assignee:profiles!action_items_assignee_id_fkey(full_name, avatar_url, team)
     `)
     .eq('account_id', profile.account_id);
 
-  if (targetId) {
+  if (overdue && scope === 'team') {
+    const isAdmin = profile.account_role === 'owner' || profile.account_role === 'admin';
+    if (!isAdmin) {
+      return NextResponse.json({ error: "Forbidden: Admins only" }, { status: 403 });
+    }
+    // All open overdue tasks across all members and days
+    query = query
+      .lt('target_date', targetDate)
+      .not('status', 'in', '("completed","cancelled")');
+  } else if (targetId) {
     query = query.eq('target_id', targetId);
   } else if (weekStart) {
     // Fetch tasks linked to any goal within this week (target_id is not null, target_date in the week)
@@ -45,7 +55,9 @@ export async function GET(req: Request) {
       .gte('target_date', weekStart)
       .lte('target_date', weekEnd);
   } else if (overdue) {
-    query = query.lt('target_date', targetDate).neq('status', 'completed');
+    query = query
+      .lt('target_date', targetDate)
+      .not('status', 'in', '("completed","cancelled")');
   } else {
     query = query.eq('target_date', targetDate);
   }
