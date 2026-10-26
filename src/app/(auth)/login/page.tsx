@@ -47,11 +47,30 @@ function LoginPageInner() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
+    let { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+
+    // If email is unconfirmed (e.g. SMTP delay/drop), auto-confirm and retry
+    if (error && error.message.toLowerCase().includes("email not confirmed")) {
+      try {
+        const confirmRes = await fetch("/api/auth/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        if (confirmRes.ok) {
+          const retry = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+          error = retry.error;
+        }
+      } catch {
+        // Fall back to original error
+      }
+    }
 
     if (error) {
       setError(error.message);
