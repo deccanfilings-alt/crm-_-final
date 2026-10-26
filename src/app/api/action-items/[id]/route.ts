@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/flows/admin-client";
 import { NextResponse } from "next/server";
 
 const ALLOWED_UPDATE_FIELDS = new Set([
@@ -15,6 +16,13 @@ const ALLOWED_UPDATE_FIELDS = new Set([
   'conversation_id',
   'estimated_hours',
   'cancel_reason',
+]);
+
+const ASSIGNEE_ALLOWED_FIELDS = new Set([
+  'status',
+  'description',
+  'subtasks',
+  'estimated_hours',
 ]);
 
 const FORBIDDEN_FIELDS = new Set([
@@ -74,6 +82,68 @@ export async function PATCH(
       );
     }
 
+    // Load existing task to check permissions and roles
+    const { data: existing, error: fetchErr } = await supabase
+      .from('action_items')
+      .select('id, title, account_id, agent_id, assignee_id, status, target_date, due_at, agent:agent_id(full_name)')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr || !existing) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('account_id, account_role')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!profile || profile.account_id !== existing.account_id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const isCreator = existing.agent_id === user.id;
+    const isAssignee = existing.assignee_id === user.id;
+    const isAdmin = profile.account_role === 'owner' || profile.account_role === 'admin';
+
+    if (!isCreator && !isAssignee && !isAdmin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Assignee-only check (neither creator nor admin)
+    if (isAssignee && !isCreator && !isAdmin) {
+      for (const field of Object.keys(updates)) {
+        if (!ASSIGNEE_ALLOWED_FIELDS.has(field)) {
+          const creatorName = (existing.agent as any)?.full_name || "the creator";
+          return NextResponse.json(
+            { error: `Only ${creatorName} or an admin can change this.` },
+            { status: 403 }
+          );
+        }
+      }
+    }
+
+    // Cancelling rules: only creator or admin may cancel; cancel_reason is required
+    if (updates.status === 'cancelled') {
+      if (!isCreator && !isAdmin) {
+        return NextResponse.json(
+          { error: "Only the person who created this task or an admin can cancel it" },
+          { status: 403 }
+        );
+      }
+      if (!updates.cancel_reason || typeof updates.cancel_reason !== 'string' || !updates.cancel_reason.trim()) {
+        return NextResponse.json(
+          { error: "Cancellation reason is required" },
+          { status: 400 }
+        );
+      }
+      updates.cancelled_at = new Date().toISOString();
+    }
+
+    // Reassigning: if assignee changes, notify the new assignee
+    const isReassigned = updates.assignee_id && updates.assignee_id !== existing.assignee_id;
+
     const { data, error } = await supabase
       .from('action_items')
       .update(updates)
@@ -82,6 +152,24 @@ export async function PATCH(
       .single();
 
     if (error) throw error;
+
+    if (isReassigned) {
+      try {
+        await supabaseAdmin().from('notifications').insert({
+          user_id: updates.assignee_id,
+          account_id: existing.account_id,
+          type: 'task_assigned',
+          title: 'New task assigned to you',
+          body: updates.title || existing.title || 'A task was reassigned to you',
+          link: `/action-items?task=${id}`,
+          read: false,
+          created_at: new Date().toISOString(),
+        });
+      } catch (notifErr) {
+        console.error("Failed to insert reassign notification:", notifErr);
+      }
+    }
+
     return NextResponse.json(data);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -96,6 +184,37 @@ export async function DELETE(
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Fetch task to verify delete permissions
+  const { data: existing, error: fetchErr } = await supabase
+    .from('action_items')
+    .select('id, account_id, agent_id, assignee_id')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (fetchErr || !existing) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_id, account_role')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!profile || profile.account_id !== existing.account_id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const isCreator = existing.agent_id === user.id;
+  const isAdmin = profile.account_role === 'owner' || profile.account_role === 'admin';
+
+  if (!isCreator && !isAdmin) {
+    return NextResponse.json(
+      { error: "Ask the person who created this task, or an admin." },
+      { status: 403 }
+    );
+  }
 
   const { error } = await supabase
     .from('action_items')

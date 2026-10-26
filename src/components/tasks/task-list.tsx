@@ -21,6 +21,7 @@ const STATUS_LABELS: Record<string, string> = {
   in_progress: "In Progress",
   review: "Review",
   completed: "Completed",
+  cancelled: "Cancelled",
 };
 
 export function TaskList({ tasks, onEditTask }: TaskListProps) {

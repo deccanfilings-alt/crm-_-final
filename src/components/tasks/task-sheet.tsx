@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, X, Trash2, User2, Search, UserCheck } from "lucide-react";
+import { Plus, X, Trash2, User2, Search, UserCheck, Ban } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import type { ActionItem } from "./types";
 
@@ -31,6 +31,15 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
 
+  // Cancellation state
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  const isCreator = Boolean(user && task && task.agent_id === user.id);
+  const isAssignee = Boolean(user && task && task.assignee_id === user.id);
+  const canManageAll = Boolean(isOwner || isAdmin || isCreator);
+  const isAssigneeOnly = isAssignee && !canManageAll;
+
   useEffect(() => {
     if (task) {
       setFormData({
@@ -39,6 +48,8 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
       });
       setContactSearch("");
       setSearchResults([]);
+      setIsCancelling(false);
+      setCancelReason(task.cancel_reason || "");
     }
   }, [task]);
 
@@ -123,35 +134,27 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
   const handleSave = async () => {
     setSaving(true);
     try {
-      const {
-        title,
-        description,
-        status,
-        priority,
-        assignee_id,
-        target_date,
-        due_at,
-        subtasks,
-        contact_id,
-        deal_id,
-        conversation_id,
-        estimated_hours,
-      } = formData;
-
-      const payload = {
-        title,
-        description,
-        status,
-        priority,
-        assignee_id,
-        target_date,
-        due_at,
-        subtasks,
-        contact_id,
-        deal_id,
-        conversation_id,
-        estimated_hours,
-      };
+      const payload: Record<string, any> = isAssigneeOnly
+        ? {
+            status: formData.status,
+            description: formData.description,
+            subtasks: formData.subtasks,
+            estimated_hours: formData.estimated_hours,
+          }
+        : {
+            title: formData.title,
+            description: formData.description,
+            status: formData.status,
+            priority: formData.priority,
+            assignee_id: formData.assignee_id,
+            target_date: formData.target_date,
+            due_at: formData.due_at,
+            subtasks: formData.subtasks,
+            contact_id: formData.contact_id,
+            deal_id: formData.deal_id,
+            conversation_id: formData.conversation_id,
+            estimated_hours: formData.estimated_hours,
+          };
 
       const res = await fetch(`/api/action-items/${task.id}`, {
         method: "PATCH",
@@ -167,6 +170,38 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
       const updated = await res.json();
       onUpdate({ ...task, ...updated });
       toast.success("Task updated");
+      onOpenChange(false);
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelTask = async () => {
+    if (!cancelReason.trim()) {
+      toast.error("Please enter a reason for cancelling this task");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/action-items/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "cancelled",
+          cancel_reason: cancelReason.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || "Failed to cancel task");
+      }
+
+      const updated = await res.json();
+      onUpdate({ ...task, ...updated });
+      toast.success("Task cancelled");
       onOpenChange(false);
     } catch (error: any) {
       toast.error(error.message);
@@ -196,7 +231,11 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
       <SheetContent className="w-full sm:max-w-md overflow-y-auto p-4 sm:p-5">
         <SheetHeader>
           <SheetTitle>Edit Task</SheetTitle>
-          <SheetDescription>Update the details of your task.</SheetDescription>
+          <SheetDescription>
+            {isAssigneeOnly
+              ? `Only ${task.agent?.full_name || "the creator"} or an admin can change title, assignee, deadline, or priority.`
+              : "Update the details of your task."}
+          </SheetDescription>
         </SheetHeader>
 
         <div className="flex flex-col gap-4 py-4">
@@ -204,6 +243,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
             <Label className="px-1">Title</Label>
             <Input 
               value={formData.title || ""} 
+              disabled={isAssigneeOnly}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })} 
             />
           </div>
@@ -223,7 +263,9 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="review">Review</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  {formData.status === "cancelled" && (
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -232,6 +274,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
               <Label className="px-1">Priority</Label>
               <Select 
                 value={formData.priority} 
+                disabled={isAssigneeOnly}
                 onValueChange={(val: any) => setFormData({ ...formData, priority: val })}
               >
                 <SelectTrigger>
@@ -252,6 +295,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
               <Label className="px-1">Assign To</Label>
               <Select 
                 value={formData.assignee_id || user?.id || ""} 
+                disabled={isAssigneeOnly}
                 onValueChange={(val) => setFormData({ ...formData, assignee_id: val || undefined })}
               >
                 <SelectTrigger>
@@ -294,19 +338,23 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
                   <UserCheck className="h-4 w-4 text-primary shrink-0" />
                   {selectedContact ? `${selectedContact.name} (${selectedContact.phone || selectedContact.email || "Contact"})` : "Contact attached"}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => {
-                    setFormData(prev => ({ ...prev, contact_id: null, deal_id: null }));
-                    setSelectedContact(null);
-                  }}
-                  title="Remove contact link"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+                {!isAssigneeOnly && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, contact_id: null, deal_id: null }));
+                      setSelectedContact(null);
+                    }}
+                    title="Remove contact link"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
+            ) : isAssigneeOnly ? (
+              <span className="text-xs text-muted-foreground italic px-1">No contact linked</span>
             ) : (
               <div className="relative">
                 <div className="relative">
@@ -392,12 +440,55 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
               </div>
             </div>
           </div>
+
+          {/* Cancellation reason display if cancelled */}
+          {formData.status === "cancelled" && (
+            <div className="p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-xs space-y-1">
+              <span className="font-semibold text-destructive flex items-center gap-1">
+                <Ban className="h-3.5 w-3.5" /> Cancelled Task
+              </span>
+              <p className="text-muted-foreground">Reason: {formData.cancel_reason || "No reason specified"}</p>
+            </div>
+          )}
+
+          {/* Inline Cancellation Reason box */}
+          {isCancelling && (
+            <div className="p-3 rounded-lg border border-destructive/40 bg-destructive/5 space-y-2">
+              <Label className="text-xs font-semibold text-destructive">Cancellation Reason</Label>
+              <Input
+                placeholder="Why is this task being cancelled?"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                className="h-8 text-xs bg-background"
+                autoFocus
+              />
+              <div className="flex items-center gap-2 justify-end">
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setIsCancelling(false)}>
+                  Back
+                </Button>
+                <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={handleCancelTask} disabled={saving || !cancelReason.trim()}>
+                  Confirm Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between mt-4 pt-4 border-t">
-          <Button variant="destructive" onClick={handleDelete}>Delete Task</Button>
+          <div className="flex items-center gap-2">
+            {canManageAll && !isCancelling && formData.status !== "cancelled" && (
+              <Button variant="outline" size="sm" className="text-xs text-destructive hover:bg-destructive/10" onClick={() => setIsCancelling(true)}>
+                <Ban className="h-3.5 w-3.5 mr-1" /> Cancel Task
+              </Button>
+            )}
+            {canManageAll && !isCancelling && (
+              <Button variant="ghost" size="sm" className="text-xs text-destructive hover:bg-destructive/10" onClick={handleDelete}>
+                <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+              </Button>
+            )}
+          </div>
           <div className="space-x-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving..." : "Save Changes"}
             </Button>

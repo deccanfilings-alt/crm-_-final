@@ -21,6 +21,7 @@ const STATUS_LABELS: Record<string, string> = {
   in_progress: "In Progress",
   review: "Review",
   completed: "Completed",
+  cancelled: "Cancelled",
 };
 
 const PRIORITY_COLORS: Record<string, string> = {

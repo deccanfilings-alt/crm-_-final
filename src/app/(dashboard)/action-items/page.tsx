@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useMemo } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { TaskBoard } from "@/components/tasks/task-board";
@@ -115,6 +117,11 @@ export default function ActionItemsPage() {
   const [activeTask, setActiveTask] = useState<ActionItem | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("planner");
+  const [showCancelled, setShowCancelled] = useState(false);
+
+  const activeItems = useMemo(() => {
+    return items.filter((i) => showCancelled || i.status !== "cancelled");
+  }, [items, showCancelled]);
 
   const fetchItems = async (date: Date) => {
     setLoading(true);
@@ -276,6 +283,13 @@ export default function ActionItemsPage() {
             <span className="text-sm text-muted-foreground">
               {completedCount} of {items.length} completed ({progress}%)
             </span>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <Checkbox
+                checked={showCancelled}
+                onCheckedChange={(c) => setShowCancelled(Boolean(c))}
+              />
+              <span>Show cancelled</span>
+            </label>
             <AddTaskDialog
               currentDate={currentDate}
               onAdded={(task) => setItems((prev) => [...prev, task])}
@@ -294,13 +308,13 @@ export default function ActionItemsPage() {
             <UserPlanner />
           ) : activeTab === "board" ? (
             <TaskBoard
-              tasks={items}
+              tasks={activeItems}
               onTaskMoved={handleTaskMoved}
               onAddTask={() => {}}
               onEditTask={handleEditTask}
             />
           ) : (
-            <TaskList tasks={items} onEditTask={handleEditTask} />
+            <TaskList tasks={activeItems} onEditTask={handleEditTask} />
           )}
         </div>
       )}
