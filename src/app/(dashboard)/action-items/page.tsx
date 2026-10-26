@@ -15,6 +15,7 @@ import { TaskBoard } from "@/components/tasks/task-board";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskSheet } from "@/components/tasks/task-sheet";
 import { UserPlanner } from "@/components/tasks/user-planner";
+import { KpiProgressCards } from "@/components/tasks/kpi-progress-cards";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter
 } from "@/components/ui/dialog";
@@ -262,6 +263,11 @@ function ActionItemsContent() {
             className="w-[180px] h-9 text-sm font-medium bg-background cursor-pointer"
           />
         </div>
+      </div>
+
+      {/* Measurable Targets (Task 9: Targets you can measure) */}
+      <div className="shrink-0 bg-card/40 rounded-2xl border border-border/60 p-4">
+        <KpiProgressCards />
       </div>
 
       {overdueItems.length > 0 && isToday && (

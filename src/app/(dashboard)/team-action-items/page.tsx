@@ -50,6 +50,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TeamPlanner } from "@/components/tasks/team-planner";
+import { KpiProgressCards } from "@/components/tasks/kpi-progress-cards";
 import { TaskSheet } from "@/components/tasks/task-sheet";
 import type { ActionItem } from "@/components/tasks/types";
 import { todayIST } from "@/lib/dates";
@@ -468,6 +469,11 @@ function TeamActionItemsContent() {
                   <p className="text-[11px] text-muted-foreground mt-0.5">Completed on or before deadline</p>
                 </CardContent>
               </Card>
+            </div>
+
+            {/* Team Measurable KPI Targets Progress (Task 9) */}
+            <div className="bg-card/40 rounded-2xl border border-border/60 p-4">
+              <KpiProgressCards isTeamView={true} />
             </div>
 
             {/* Per-Person Accountability Table */}
