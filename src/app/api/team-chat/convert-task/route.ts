@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { canViewRoom } from '@/lib/team-chat/room-access'
+import { todayIST } from '@/lib/dates'
 
 export async function POST(request: Request) {
   try {
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('account_id, user_id')
+      .select('account_id, user_id, full_name')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -55,10 +56,12 @@ export async function POST(request: Request) {
       .from('action_items')
       .insert({
         account_id: accountId,
-        agent_id: assignedAgentId,
+        agent_id: user.id,
+        assignee_id: assignedAgentId,
         title: title.trim(),
-        status: 'pending',
-        target_date: target_date || new Date().toISOString().split('T')[0],
+        status: 'todo',
+        target_date: target_date || todayIST(),
+        source: 'team_chat',
       })
       .select()
       .single()
@@ -66,6 +69,23 @@ export async function POST(request: Request) {
     if (error) {
       console.error('[team-chat] convert-task error:', error)
       throw error
+    }
+
+    if (assignedAgentId !== user.id) {
+      try {
+        await supabaseAdmin().from('notifications').insert({
+          account_id: accountId,
+          user_id: assignedAgentId,
+          type: 'task_assigned',
+          title: '📋 New Task Assigned',
+          body: `${profile?.full_name || 'A teammate'} assigned you: "${title.trim()}"`,
+          link: `/action-items?task=${actionItem.id}`,
+          read: false,
+          created_at: new Date().toISOString(),
+        })
+      } catch (notifErr) {
+        console.error('[team-chat] convert-task notification error:', notifErr)
+      }
     }
 
     return NextResponse.json({ success: true, task: actionItem })

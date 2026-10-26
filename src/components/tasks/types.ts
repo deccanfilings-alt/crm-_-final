@@ -1,3 +1,24 @@
+export interface ActionItemEvent {
+  id: string;
+  action_item_id: string;
+  account_id: string;
+  actor_id: string | null;
+  event: 'created' | 'status_changed' | 'reassigned' | 'due_changed' | 'priority_changed' | 'title_changed';
+  from_value: string | null;
+  to_value: string | null;
+  created_at: string;
+  actor?: {
+    full_name: string | null;
+    avatar_url: string | null;
+  } | null;
+  from_profile?: {
+    full_name: string | null;
+  } | null;
+  to_profile?: {
+    full_name: string | null;
+  } | null;
+}
+
 export interface ActionItem {
   id: string;
   account_id: string;
@@ -32,4 +53,5 @@ export interface ActionItem {
     full_name: string;
     avatar_url: string | null;
   };
+  events?: ActionItemEvent[];
 }

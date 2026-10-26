@@ -39,6 +39,83 @@ const IGNORED_FIELDS = new Set([
   'events',
 ]);
 
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // 1. Fetch task with joined agent and assignee
+  const { data: task, error: taskErr } = await supabase
+    .from('action_items')
+    .select(`
+      *,
+      agent:profiles!action_items_agent_id_fkey(full_name, avatar_url),
+      assignee:profiles!action_items_assignee_id_fkey(full_name, avatar_url)
+    `)
+    .eq('id', id)
+    .maybeSingle();
+
+  if (taskErr) {
+    return NextResponse.json({ error: taskErr.message }, { status: 500 });
+  }
+  if (!task) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
+  // 2. Fetch history events ordered by created_at ascending
+  const { data: events, error: eventsErr } = await supabase
+    .from('action_item_events')
+    .select('*')
+    .eq('action_item_id', id)
+    .order('created_at', { ascending: true });
+
+  if (eventsErr) {
+    console.error("Failed to fetch action item events:", eventsErr);
+  }
+
+  // 3. Resolve actor names and profile references for reassignment/creation
+  const userIds = new Set<string>();
+  for (const ev of events || []) {
+    if (ev.actor_id) userIds.add(ev.actor_id);
+    if (ev.event === 'reassigned') {
+      if (ev.from_value) userIds.add(ev.from_value);
+      if (ev.to_value) userIds.add(ev.to_value);
+    } else if (ev.event === 'created' && ev.to_value) {
+      userIds.add(ev.to_value);
+    }
+  }
+
+  const profileMap: Record<string, { full_name: string | null; avatar_url: string | null }> = {};
+  if (userIds.size > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('user_id, full_name, avatar_url')
+      .in('user_id', Array.from(userIds));
+
+    if (profiles) {
+      for (const p of profiles) {
+        profileMap[p.user_id] = { full_name: p.full_name, avatar_url: p.avatar_url };
+      }
+    }
+  }
+
+  const enrichedEvents = (events || []).map((ev: any) => ({
+    ...ev,
+    actor: ev.actor_id ? (profileMap[ev.actor_id] || { full_name: "Unknown", avatar_url: null }) : null,
+    from_profile: ev.from_value && profileMap[ev.from_value] ? profileMap[ev.from_value] : null,
+    to_profile: ev.to_value && profileMap[ev.to_value] ? profileMap[ev.to_value] : null,
+  }));
+
+  return NextResponse.json({
+    ...task,
+    events: enrichedEvents,
+  });
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }

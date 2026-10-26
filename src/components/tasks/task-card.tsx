@@ -1,12 +1,13 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { format } from "date-fns";
-import { Calendar, User2 } from "lucide-react";
+import { Calendar, CheckCircle2, User2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { ActionItem } from "./types";
 import { cn } from "@/lib/utils";
+import { formatDateOnlyIST, getLateInfo } from "@/lib/dates";
 
 interface TaskCardProps {
   task: ActionItem;
@@ -32,6 +33,9 @@ export function TaskCard({ task, onEdit, isOverlay }: TaskCardProps) {
   const priorityColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal;
   const initials = task.assignee?.full_name?.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() || "?";
 
+  const isCompleted = task.status === 'completed';
+  const lateInfo = isCompleted ? getLateInfo(task.completed_at, task.target_date) : { isLate: false, daysLate: 0 };
+
   return (
     <Card
       ref={setNodeRef}
@@ -50,7 +54,7 @@ export function TaskCard({ task, onEdit, isOverlay }: TaskCardProps) {
     >
       <CardContent className="p-3 space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <span className="text-sm font-medium leading-tight">
+          <span className={cn("text-sm font-medium leading-tight", isCompleted && "line-through text-muted-foreground")}>
             {task.title}
           </span>
           <Badge variant="outline" className={cn("text-[10px] h-5 px-1.5 font-semibold capitalize shrink-0", priorityColor)}>
@@ -72,10 +76,22 @@ export function TaskCard({ task, onEdit, isOverlay }: TaskCardProps) {
         )}
 
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
-          <div className="flex items-center text-xs text-muted-foreground gap-1.5">
-            <Calendar className="h-3.5 w-3.5" />
-            <span>{format(new Date(task.target_date), "MMM d")}</span>
-          </div>
+          {isCompleted ? (
+            <div className="flex items-center text-xs text-emerald-600 dark:text-emerald-400 font-medium gap-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              <span>Done {formatDateOnlyIST(task.completed_at || task.target_date)}</span>
+              {lateInfo.isLate && (
+                <Badge variant="destructive" className="text-[9px] h-4 px-1 py-0 uppercase tracking-wider font-bold">
+                  late
+                </Badge>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center text-xs text-muted-foreground gap-1.5">
+              <Calendar className="h-3.5 w-3.5 shrink-0" />
+              <span>{format(new Date(task.target_date), "MMM d")}</span>
+            </div>
+          )}
 
           <Avatar className="h-6 w-6 border bg-muted">
             {task.assignee?.avatar_url ? (

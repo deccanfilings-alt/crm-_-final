@@ -9,9 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, X, Trash2, User2, Search, UserCheck, Ban } from "lucide-react";
+import { Plus, X, Trash2, User2, Search, UserCheck, Ban, History } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import type { ActionItem } from "./types";
+import type { ActionItem, ActionItemEvent } from "./types";
+import { formatDateTimeIST, getLateInfo } from "@/lib/dates";
 
 interface TaskSheetProps {
   task: ActionItem | null;
@@ -19,6 +20,61 @@ interface TaskSheetProps {
   onOpenChange: (open: boolean) => void;
   onUpdate: (task: ActionItem) => void;
   onDelete: (id: string) => void;
+}
+
+function renderEventLine(event: ActionItemEvent, taskTargetDate?: string) {
+  const actorName = event.actor?.full_name || "System";
+  const timeFormatted = formatDateTimeIST(event.created_at);
+
+  let description = "";
+
+  switch (event.event) {
+    case 'created': {
+      const assignedTo = event.to_profile?.full_name;
+      description = `${actorName} created this task${assignedTo ? ` and assigned it to ${assignedTo}` : ''}`;
+      break;
+    }
+    case 'status_changed': {
+      const toVal = event.to_value || "";
+      if (toVal === 'completed') {
+        const late = getLateInfo(event.created_at, taskTargetDate);
+        const lateText = late.isLate ? ` (${late.daysLate} day${late.daysLate > 1 ? 's' : ''} late)` : "";
+        description = `${actorName} marked it Completed${lateText}`;
+      } else if (toVal.startsWith('cancelled')) {
+        const reason = toVal.replace(/^cancelled:\s*/, '');
+        description = `${actorName} cancelled this task${reason ? `: "${reason}"` : ''}`;
+      } else {
+        const statusMap: Record<string, string> = {
+          todo: 'To Do',
+          in_progress: 'In Progress',
+          review: 'Review',
+        };
+        description = `${actorName} changed status to ${statusMap[toVal] || toVal}`;
+      }
+      break;
+    }
+    case 'reassigned': {
+      const toName = event.to_profile?.full_name || "someone";
+      description = `${actorName} reassigned this to ${toName}`;
+      break;
+    }
+    case 'due_changed': {
+      description = `${actorName} changed due date to ${event.to_value || "new deadline"}`;
+      break;
+    }
+    case 'priority_changed': {
+      description = `${actorName} changed priority to ${event.to_value}`;
+      break;
+    }
+    case 'title_changed': {
+      description = `${actorName} changed title to "${event.to_value}"`;
+      break;
+    }
+    default:
+      description = `${actorName} updated this task (${event.event})`;
+  }
+
+  return { description, timeFormatted };
 }
 
 export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: TaskSheetProps) {
@@ -31,6 +87,10 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
 
+  // Events history state
+  const [events, setEvents] = useState<ActionItemEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
   // Cancellation state
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -39,6 +99,23 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
   const isAssignee = Boolean(user && task && task.assignee_id === user.id);
   const canManageAll = Boolean(isOwner || isAdmin || isCreator);
   const isAssigneeOnly = isAssignee && !canManageAll;
+
+  const loadEvents = useCallback(async (taskId: string) => {
+    setLoadingEvents(true);
+    try {
+      const res = await fetch(`/api/action-items/${taskId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.events) {
+          setEvents(data.events);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load task events:", err);
+    } finally {
+      setLoadingEvents(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (task) {
@@ -52,6 +129,14 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
       setCancelReason(task.cancel_reason || "");
     }
   }, [task]);
+
+  useEffect(() => {
+    if (open && task?.id) {
+      loadEvents(task.id);
+    } else {
+      setEvents([]);
+    }
+  }, [open, task?.id, loadEvents]);
 
   useEffect(() => {
     if (!open) return;
@@ -246,13 +331,18 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
               disabled={isAssigneeOnly}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })} 
             />
+            {isAssigneeOnly && (
+              <span className="text-[11px] text-muted-foreground px-1 italic">
+                Only {task.agent?.full_name || "the creator"} or an admin can change this
+              </span>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label className="px-1">Status</Label>
               <Select 
-                value={formData.status} 
+                value={formData.status || "todo"} 
                 onValueChange={(val: any) => setFormData({ ...formData, status: val })}
               >
                 <SelectTrigger>
@@ -273,7 +363,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
             <div className="flex flex-col gap-1.5">
               <Label className="px-1">Priority</Label>
               <Select 
-                value={formData.priority} 
+                value={formData.priority || "normal"} 
                 disabled={isAssigneeOnly}
                 onValueChange={(val: any) => setFormData({ ...formData, priority: val })}
               >
@@ -287,6 +377,29 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
                   <SelectItem value="urgent">Urgent</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="px-1">Target Date</Label>
+              <Input 
+                type="date"
+                disabled={isAssigneeOnly}
+                value={formData.target_date || ""} 
+                onChange={(e) => setFormData({ ...formData, target_date: e.target.value })} 
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label className="px-1">Estimated Hours</Label>
+              <Input 
+                type="number" 
+                step="0.5"
+                placeholder="e.g. 2.5"
+                value={formData.estimated_hours ?? ""} 
+                onChange={(e) => setFormData({ ...formData, estimated_hours: e.target.value ? parseFloat(e.target.value) : null })} 
+              />
             </div>
           </div>
 
@@ -470,6 +583,41 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
                   Confirm Cancel
                 </Button>
               </div>
+            </div>
+          )}
+
+          {/* History Section */}
+          {task.id && (
+            <div className="flex flex-col gap-2 pt-4 border-t border-border/60">
+              <div className="flex items-center justify-between px-1">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <History className="h-3.5 w-3.5" />
+                  History
+                </Label>
+                {loadingEvents && <span className="text-[11px] text-muted-foreground animate-pulse">Loading...</span>}
+              </div>
+
+              {events.length === 0 && !loadingEvents ? (
+                <div className="p-3 text-center rounded-md border border-dashed bg-muted/20 text-xs text-muted-foreground">
+                  No activity recorded yet
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 divide-y divide-border/40 max-h-56 overflow-y-auto px-1">
+                  {[...events].reverse().map((ev) => {
+                    const { description, timeFormatted } = renderEventLine(ev, task.target_date);
+                    return (
+                      <div key={ev.id} className="pt-2 first:pt-0 flex items-start justify-between gap-2 text-xs">
+                        <span className="text-foreground leading-snug">
+                          {description}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0">
+                          {timeFormatted}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>

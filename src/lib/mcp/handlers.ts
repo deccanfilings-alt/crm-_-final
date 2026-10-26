@@ -843,10 +843,12 @@ export async function executeMCPTool(
             .insert({
               account_id: accountId,
               agent_id: actingUserId,
+              assignee_id: actingUserId,
               title,
               target_date: args.target_date || new Date().toISOString().split('T')[0],
               contact_id: args.contact_id || null,
               status: 'todo',
+              source: 'mcp',
             })
             .select('*')
             .single();

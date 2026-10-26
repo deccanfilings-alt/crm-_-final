@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { ActionItem } from "./types";
+import { formatDateOnlyIST, getLateInfo } from "@/lib/dates";
 
 interface TaskListProps {
   tasks: ActionItem[];
@@ -49,6 +50,8 @@ export function TaskList({ tasks, onEditTask }: TaskListProps) {
           {tasks.map((task) => {
             const priorityColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.normal;
             const initials = task.assignee?.full_name?.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase() || "?";
+            const isCompleted = task.status === 'completed';
+            const lateInfo = isCompleted ? getLateInfo(task.completed_at, task.target_date) : { isLate: false, daysLate: 0 };
 
             return (
               <TableRow 
@@ -57,7 +60,9 @@ export function TaskList({ tasks, onEditTask }: TaskListProps) {
                 onClick={() => onEditTask(task)}
               >
                 <TableCell className="font-medium">
-                  {task.title}
+                  <span className={isCompleted ? "line-through text-muted-foreground" : ""}>
+                    {task.title}
+                  </span>
                   {task.description && (
                     <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                       {task.description}
@@ -93,7 +98,20 @@ export function TaskList({ tasks, onEditTask }: TaskListProps) {
                   </div>
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground">
-                  {format(new Date(task.target_date), "MMM d, yyyy")}
+                  {isCompleted ? (
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                        Done {formatDateOnlyIST(task.completed_at || task.target_date)}
+                      </span>
+                      {lateInfo.isLate && (
+                        <Badge variant="destructive" className="text-[9px] h-4 px-1 py-0 uppercase tracking-wider font-bold">
+                          late
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    format(new Date(task.target_date), "MMM d, yyyy")
+                  )}
                 </TableCell>
               </TableRow>
             );

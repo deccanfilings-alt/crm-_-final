@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PATCH, DELETE } from './route';
+import { GET, PATCH, DELETE } from './route';
 
 const {
   mockUser,
   mockProfile,
   mockExistingTask,
+  mockEvents,
+  mockProfilesList,
   mockUpdate,
   mockEq,
   mockSelect,
@@ -18,6 +20,33 @@ const {
   const mockDelete = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }));
   const mockInsertNotification = vi.fn().mockResolvedValue({ data: null, error: null });
 
+  const mockEvents = [
+    {
+      id: 'event-1',
+      action_item_id: 'task-123',
+      account_id: 'acc-1',
+      actor_id: 'user-creator-9',
+      event: 'created',
+      to_value: 'user-assignee-1',
+      created_at: '2026-10-24T10:00:00Z',
+    },
+    {
+      id: 'event-2',
+      action_item_id: 'task-123',
+      account_id: 'acc-1',
+      actor_id: 'user-assignee-1',
+      event: 'status_changed',
+      from_value: 'todo',
+      to_value: 'completed',
+      created_at: '2026-10-25T11:20:00Z',
+    },
+  ];
+
+  const mockProfilesList = [
+    { user_id: 'user-creator-9', full_name: 'Priya Leader', avatar_url: null },
+    { user_id: 'user-assignee-1', full_name: 'Ravi Staff', avatar_url: null },
+  ];
+
   return {
     mockUser: { id: 'user-assignee-1' },
     mockProfile: { account_id: 'acc-1', account_role: 'agent' },
@@ -30,6 +59,8 @@ const {
       title: 'Original Title',
       agent: { full_name: 'Priya Leader' },
     },
+    mockEvents,
+    mockProfilesList,
     mockUpdate,
     mockDelete,
     mockEq,
@@ -58,12 +89,22 @@ vi.mock('@/lib/supabase/server', () => ({
           })),
         };
       }
+      if (table === 'action_item_events') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              order: vi.fn().mockResolvedValue({ data: mockEvents, error: null }),
+            })),
+          })),
+        };
+      }
       if (table === 'profiles') {
         return {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn().mockResolvedValue({ data: mockProfile, error: null }),
             })),
+            in: vi.fn().mockResolvedValue({ data: mockProfilesList, error: null }),
           })),
         };
       }
@@ -79,6 +120,25 @@ vi.mock('@/lib/flows/admin-client', () => ({
     })),
   }),
 }));
+
+describe('GET /api/action-items/[id] - Task 3 History & Events', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns task with joined events and enriched actor profiles', async () => {
+    const req = new Request('http://localhost/api/action-items/task-123');
+    const res = await GET(req, { params: Promise.resolve({ id: 'task-123' }) });
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.id).toBe('task-123');
+    expect(json.events).toBeDefined();
+    expect(json.events.length).toBe(2);
+    expect(json.events[0].actor?.full_name).toBe('Priya Leader');
+    expect(json.events[1].actor?.full_name).toBe('Ravi Staff');
+  });
+});
 
 describe('PATCH & DELETE /api/action-items/[id] - Task 2 Permissions', () => {
   beforeEach(() => {
