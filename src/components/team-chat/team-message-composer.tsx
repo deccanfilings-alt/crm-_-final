@@ -127,7 +127,10 @@ export function TeamMessageComposer({
 
   // Detect @ character in textarea to trigger mention popup
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value
+    const el = e.target
+    el.style.height = "auto"
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+    const val = el.value
     setContent(val)
     onTyping?.()
 
@@ -382,6 +385,9 @@ export function TeamMessageComposer({
       )
       onCancelReply?.()
       setContent("")
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto"
+      }
       setAttachments([])
       setTaggedContacts(new Map())
       setMentionedUsers(new Map())
@@ -730,7 +736,7 @@ export function TeamMessageComposer({
           onPaste={handlePaste}
           placeholder={placeholder}
           disabled={disabled || sending || uploading}
-          className="min-h-[38px] max-h-32 flex-1 resize-none border-0 bg-transparent p-1 text-sm shadow-none focus-visible:ring-0 placeholder:text-muted-foreground"
+          className="min-h-[38px] max-h-[160px] flex-1 resize-none border-0 bg-transparent p-1 text-sm shadow-none focus-visible:ring-0 placeholder:text-muted-foreground"
           rows={1}
         />
 

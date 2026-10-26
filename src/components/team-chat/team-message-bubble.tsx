@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { splitLinks } from "@/lib/team-chat/linkify"
 import type { TeamMessage, TaggedContactInfo, TeamChatAttachment } from "@/types"
 
 interface TeamMessageBubbleProps {
@@ -192,25 +193,38 @@ export function TeamMessageBubble({
         )
       }
 
-      // Detect raw GIF/image URLs pasted in message text
-      if (
-        part.startsWith("http") &&
-        (part.includes(".gif") || part.includes("giphy.com") || part.includes("tenor.com"))
-      ) {
-        return (
-          <div key={index} className="my-1.5">
-            <img
-              src={part.trim()}
-              alt="GIF"
-              className="max-h-64 max-w-sm rounded-xl object-contain border border-border shadow-xs cursor-pointer hover:opacity-95"
-              onClick={() => setLightboxImage(part.trim())}
-              loading="lazy"
-            />
-          </div>
-        )
-      }
-
-      return <span key={index}>{part}</span>
+      const tokens = splitLinks(part)
+      return tokens.map((token, tIndex) => {
+        if (token.type === "url") {
+          const lower = token.value.toLowerCase()
+          const isGif = lower.endsWith(".gif") || lower.includes("giphy.com") || lower.includes("tenor.com")
+          if (isGif) {
+            return (
+              <div key={`${index}-${tIndex}`} className="my-1.5">
+                <img
+                  src={token.value}
+                  alt="GIF"
+                  className="max-h-64 max-w-sm rounded-xl object-contain border border-border shadow-xs cursor-pointer hover:opacity-95"
+                  onClick={() => setLightboxImage(token.value)}
+                  loading="lazy"
+                />
+              </div>
+            )
+          }
+          return (
+            <a
+              key={`${index}-${tIndex}`}
+              href={token.value}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 break-all hover:opacity-80 transition-opacity"
+            >
+              {token.value}
+            </a>
+          )
+        }
+        return <span key={`${index}-${tIndex}`}>{token.value}</span>
+      })
     })
   }
 
