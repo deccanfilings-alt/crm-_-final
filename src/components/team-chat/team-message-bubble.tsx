@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef } from "react"
+import React, { useState } from "react"
 import { format } from "date-fns"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -19,7 +19,6 @@ import {
   Check,
   X,
   CornerUpLeft,
-  ExternalLink,
   ZoomIn,
   CheckSquare,
 } from "lucide-react"
@@ -29,6 +28,7 @@ import type { TeamMessage, TaggedContactInfo, TeamChatAttachment } from "@/types
 
 interface TeamMessageBubbleProps {
   message: TeamMessage
+  isGrouped?: boolean
   currentUserId?: string
   userRole?: string
   onToggleReaction: (messageId: string, emoji: string) => void
@@ -42,6 +42,7 @@ interface TeamMessageBubbleProps {
 
 export function TeamMessageBubble({
   message,
+  isGrouped = false,
   currentUserId,
   userRole = "agent",
   onToggleReaction,
@@ -58,10 +59,13 @@ export function TeamMessageBubble({
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
 
+  const isAuthor = currentUserId === message.sender_id
+  const canModify = isAuthor || userRole === "owner" || userRole === "admin"
+
   const hasBroadcastMention =
-    /@channel\b/i.test(message.content || "") ||
-    /@everyone\b/i.test(message.content || "") ||
-    /@here\b/i.test(message.content || "")
+    /@channel/i.test(message.content || "") ||
+    /@everyone/i.test(message.content || "") ||
+    /@here/i.test(message.content || "")
   const isMentioned =
     currentUserId &&
     (hasBroadcastMention || message.mentioned_user_ids?.includes(currentUserId))
@@ -80,9 +84,6 @@ export function TeamMessageBubble({
     .join("")
     .slice(0, 2)
     .toUpperCase()
-
-  const isAuthor = currentUserId === message.sender_id
-  const canModify = isAuthor || userRole === "owner" || userRole === "admin"
 
   const handleSaveEdit = async () => {
     if (!editContent.trim() || editContent === message.content) {
@@ -130,10 +131,15 @@ export function TeamMessageBubble({
             key={index}
             type="button"
             onClick={() => onSelectContact(contactObj)}
-            className="inline-flex items-center gap-1 mx-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-medium text-xs hover:bg-emerald-500/25 transition-colors cursor-pointer select-none"
+            className={cn(
+              "inline-flex items-center gap-1 mx-1 px-2 py-0.5 rounded-full font-medium text-xs transition-colors cursor-pointer select-none",
+              isAuthor
+                ? "bg-primary-foreground/20 border border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/30"
+                : "bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25"
+            )}
             title={`View contact record for ${contactName}`}
           >
-            <UserCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <UserCheck className={cn("h-3 w-3 shrink-0", isAuthor ? "text-primary-foreground" : "text-emerald-600 dark:text-emerald-400")} />
             <span>{contactName}</span>
           </button>
         )
@@ -152,14 +158,19 @@ export function TeamMessageBubble({
           return (
             <span
               key={index}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-xs mx-0.5 select-none bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 shadow-xs"
+              className={cn(
+                "inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold text-xs mx-0.5 select-none shadow-xs",
+                isAuthor
+                  ? "bg-primary-foreground/20 text-primary-foreground border border-primary-foreground/30"
+                  : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+              )}
             >
               {isChannel ? (
-                <Megaphone className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                <Megaphone className={cn("h-3 w-3 shrink-0", isAuthor ? "text-primary-foreground" : "text-amber-600 dark:text-amber-400")} />
               ) : isEveryone ? (
-                <Users className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                <Users className={cn("h-3 w-3 shrink-0", isAuthor ? "text-primary-foreground" : "text-amber-600 dark:text-amber-400")} />
               ) : (
-                <CircleDot className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                <CircleDot className={cn("h-3 w-3 shrink-0", isAuthor ? "text-primary-foreground" : "text-amber-600 dark:text-amber-400")} />
               )}
               <span>{trimmed}</span>
             </span>
@@ -169,7 +180,12 @@ export function TeamMessageBubble({
         return (
           <span
             key={index}
-            className="inline-flex items-center px-1.5 py-0.5 rounded bg-primary/15 font-medium text-primary text-xs mx-0.5 select-none"
+            className={cn(
+              "inline-flex items-center px-1.5 py-0.5 rounded font-medium text-xs mx-0.5 select-none",
+              isAuthor
+                ? "bg-primary-foreground/20 text-primary-foreground"
+                : "bg-primary/15 text-primary"
+            )}
           >
             {part}
           </span>
@@ -203,7 +219,7 @@ export function TeamMessageBubble({
     if (!message.attachments || message.attachments.length === 0) return null
 
     return (
-      <div className="flex flex-wrap gap-2 mt-2">
+      <div className={cn("flex flex-wrap gap-2 mt-2", isAuthor ? "justify-end" : "justify-start")}>
         {message.attachments.map((att: TeamChatAttachment, i: number) => {
           const isImageOrGif =
             att.type?.startsWith("image/") ||
@@ -312,68 +328,67 @@ export function TeamMessageBubble({
       <div
         id={`message-${message.id}`}
         className={cn(
-          "group relative flex gap-3 px-4 py-2 hover:bg-muted/40 transition-colors",
-          isMentioned && "bg-amber-500/10 border-l-2 border-amber-500 hover:bg-amber-500/15"
+          "group relative flex gap-2 px-4 transition-colors",
+          isGrouped ? "py-0.5" : "pt-2 pb-0.5",
+          isAuthor ? "flex-row-reverse" : "flex-row"
         )}
       >
-        {/* Sender Avatar */}
-        <Avatar className="h-8 w-8 shrink-0 mt-0.5 border border-border">
-          <AvatarImage src={message.sender?.avatar_url || undefined} alt={senderName} />
-          <AvatarFallback className="text-xs bg-muted font-medium text-foreground">
-            {initials}
-          </AvatarFallback>
-        </Avatar>
+        {/* Sender Avatar for others only */}
+        {!isAuthor && (
+          !isGrouped ? (
+            <Avatar className="h-8 w-8 shrink-0 mt-0.5 border border-border">
+              <AvatarImage src={message.sender?.avatar_url || undefined} alt={senderName} />
+              <AvatarFallback className="text-xs bg-muted font-medium text-foreground">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            <div className="w-8 shrink-0" />
+          )
+        )}
 
-        <div className="min-w-0 flex-1">
-          {/* Header (Sender Name, Role Badge, Timestamp, Edited Tag) */}
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-semibold text-xs text-foreground truncate">
-              {senderName}
-            </span>
+        <div className={cn("min-w-0 flex flex-col max-w-[75%]", isAuthor ? "items-end" : "items-start")}>
+          {/* Header (shown only when !isGrouped) */}
+          {!isGrouped && (
+            <div className={cn("flex items-center gap-2 mb-1", isAuthor && "flex-row-reverse")}>
+              {!isAuthor && (
+                <>
+                  <span className="font-semibold text-xs text-foreground truncate">
+                    {senderName}
+                  </span>
 
-            {senderRole === "owner" ? (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-500">
-                <Crown className="h-2.5 w-2.5" />
-                Owner
-              </span>
-            ) : senderRole === "admin" ? (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-primary/30 bg-primary/10 text-primary">
-                <Shield className="h-2.5 w-2.5" />
-                Team Leader
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-border bg-muted/60 text-muted-foreground">
-                <UserCog className="h-2.5 w-2.5" />
-                Team Member
-              </span>
-            )}
+                  {senderRole === "owner" ? (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-500">
+                      <Crown className="h-2.5 w-2.5" />
+                      Owner
+                    </span>
+                  ) : senderRole === "admin" ? (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-primary/30 bg-primary/10 text-primary">
+                      <Shield className="h-2.5 w-2.5" />
+                      Team Leader
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-medium border border-border bg-muted/60 text-muted-foreground">
+                      <UserCog className="h-2.5 w-2.5" />
+                      Team Member
+                    </span>
+                  )}
+                </>
+              )}
 
-            <span className="text-[10px] text-muted-foreground ml-auto group-hover:opacity-100 opacity-70 flex items-center gap-1">
-              {isEdited && <span className="italic text-[9px] text-muted-foreground/80">(edited)</span>}
-              {time}
-            </span>
-          </div>
-
-          {/* Quoted Reply Preview */}
-          {message.reply_to && (
-            <div
-              onClick={() => onJumpToMessage?.(message.reply_to!.id)}
-              className="flex items-center gap-2 mb-1.5 px-2.5 py-1 rounded-md bg-muted/60 border-l-2 border-primary text-xs cursor-pointer hover:bg-muted transition-colors max-w-lg"
-              title="Click to view original message"
-            >
-              <CornerUpLeft className="h-3 w-3 text-primary shrink-0" />
-              <span className="font-semibold text-[11px] text-primary truncate max-w-[120px]">
-                {message.reply_to.sender_name || "Teammate"}:
-              </span>
-              <span className="truncate text-[11px] text-muted-foreground">
-                {message.reply_to.content}
+              <span
+                title={format(new Date(message.created_at), "EEE d MMM yyyy, HH:mm")}
+                className="text-[10px] text-muted-foreground opacity-70 flex items-center gap-1 cursor-default"
+              >
+                {isEdited && <span className="italic text-[9px] text-muted-foreground/80">(edited)</span>}
+                {time}
               </span>
             </div>
           )}
 
-          {/* Message Content or Inline Edit Mode */}
+          {/* Bubble around Quoted Reply + Content */}
           {isEditing ? (
-            <div className="mt-1 space-y-2">
+            <div className="mt-1 space-y-2 w-full min-w-[280px]">
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
@@ -403,7 +418,37 @@ export function TeamMessageBubble({
               </div>
             </div>
           ) : (
-            <div className="text-xs leading-relaxed text-foreground break-words">
+            <div
+              className={cn(
+                "rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words shadow-2xs",
+                isAuthor
+                  ? "bg-primary text-primary-foreground rounded-br-md"
+                  : "bg-muted text-foreground rounded-bl-md",
+                isMentioned && !isAuthor && "ring-2 ring-amber-400"
+              )}
+            >
+              {/* Quoted Reply Preview inside the bubble */}
+              {message.reply_to && (
+                <div
+                  onClick={() => onJumpToMessage?.(message.reply_to!.id)}
+                  className={cn(
+                    "flex items-center gap-2 mb-1.5 px-2.5 py-1 rounded-md text-xs cursor-pointer transition-colors max-w-lg",
+                    isAuthor
+                      ? "bg-primary-foreground/15 border-l-2 border-primary-foreground text-primary-foreground hover:bg-primary-foreground/20"
+                      : "bg-background/60 border-l-2 border-primary text-foreground hover:bg-background/80"
+                  )}
+                  title="Click to view original message"
+                >
+                  <CornerUpLeft className={cn("h-3 w-3 shrink-0", isAuthor ? "text-primary-foreground" : "text-primary")} />
+                  <span className={cn("font-semibold text-[11px] truncate max-w-[120px]", isAuthor ? "text-primary-foreground" : "text-primary")}>
+                    {message.reply_to.sender_name || "Teammate"}:
+                  </span>
+                  <span className={cn("truncate text-[11px]", isAuthor ? "text-primary-foreground/80" : "text-muted-foreground")}>
+                    {message.reply_to.content}
+                  </span>
+                </div>
+              )}
+
               {renderFormattedContent()}
             </div>
           )}
@@ -413,7 +458,7 @@ export function TeamMessageBubble({
 
           {/* Reactions row */}
           {reactionMap.size > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
+            <div className={cn("flex flex-wrap gap-1.5 mt-1.5", isAuthor ? "justify-end" : "justify-start")}>
               {Array.from(reactionMap.entries()).map(([emoji, { count, reactedByMe }]) => (
                 <button
                   key={emoji}
@@ -434,8 +479,13 @@ export function TeamMessageBubble({
           )}
         </div>
 
-        {/* Hover Action Bar */}
-        <div className="absolute right-4 top-2 hidden group-hover:flex items-center gap-1 rounded-lg border border-border bg-popover/90 backdrop-blur-sm p-1 shadow-sm z-10">
+        {/* Hover Action Bar on opposite side */}
+        <div
+          className={cn(
+            "absolute top-2 hidden group-hover:flex items-center gap-1 rounded-lg border border-border bg-popover/90 backdrop-blur-sm p-1 shadow-sm z-10",
+            isAuthor ? "left-4" : "right-4"
+          )}
+        >
           {/* Quick Reaction Emojis */}
           {["👍", "❤️", "😂", "🚀", "🔥"].map((emoji) => (
             <button
@@ -469,7 +519,6 @@ export function TeamMessageBubble({
           >
             <CheckSquare className="h-3.5 w-3.5" />
           </button>
-
 
           {/* Edit Button (author or lead) */}
           {canModify && !isEditing && (
@@ -522,29 +571,17 @@ export function TeamMessageBubble({
       </div>
 
       {/* Lightbox Dialog */}
-      <Dialog open={Boolean(lightboxImage)} onOpenChange={(open) => !open && setLightboxImage(null)}>
-        <DialogContent className="max-w-4xl p-2 bg-black/90 border-zinc-800 text-white flex flex-col items-center justify-center">
-          {lightboxImage && (
-            <div className="relative flex flex-col items-center">
-              <img
-                src={lightboxImage}
-                alt="Enlarged media"
-                className="max-h-[80vh] w-auto max-w-full rounded-lg object-contain shadow-2xl"
-              />
-              <div className="mt-3 flex items-center gap-3">
-                <a
-                  href={lightboxImage}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-white transition-colors"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" /> Open Original
-                </a>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {lightboxImage && (
+        <Dialog open={Boolean(lightboxImage)} onOpenChange={() => setLightboxImage(null)}>
+          <DialogContent className="max-w-4xl p-2 bg-black/90 border-none shadow-2xl flex items-center justify-center">
+            <img
+              src={lightboxImage}
+              alt="Enlarged preview"
+              className="max-h-[85vh] max-w-full rounded-lg object-contain"
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   )
 }

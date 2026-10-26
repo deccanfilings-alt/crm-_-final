@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { format, isSameDay, isToday, isYesterday } from "date-fns"
 import { useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/lib/supabase/client"
 import { TeamChannelList, type TeammateMember } from "@/components/team-chat/team-channel-list"
@@ -44,6 +45,23 @@ function playNotificationChime() {
   } catch {
     // Ignore audio restrictions
   }
+}
+
+
+function DateSeparator({ date }: { date: Date }) {
+  const label = isToday(date)
+    ? "Today"
+    : isYesterday(date)
+    ? "Yesterday"
+    : format(date, "EEE, d MMM yyyy")
+
+  return (
+    <div className="my-3 flex justify-center select-none">
+      <span className="rounded-full bg-muted px-3 py-0.5 text-[11px] font-medium text-muted-foreground shadow-2xs">
+        {label}
+      </span>
+    </div>
+  )
 }
 
 export default function TeamChatPage() {
@@ -765,24 +783,40 @@ export default function TeamChatPage() {
                   )}
                 </div>
               ) : (
-                visibleMessages.map((msg) => (
-                  <TeamMessageBubble
-                    key={msg.id}
-                    message={msg}
-                    currentUserId={user?.id}
-                    userRole={accountRole || undefined}
-                    onToggleReaction={handleToggleReaction}
-                    onSelectContact={handleSelectContact}
-                    onDeleteMessage={handleDeleteMessage}
-                    onReplyMessage={(m) => setReplyToMessage(m)}
-                    onEditMessage={handleEditMessage}
-                    onJumpToMessage={handleJumpToMessage}
-                    onConvertToTask={(m) => {
-                      setTaskMessage(m)
-                      setTaskModalOpen(true)
-                    }}
-                  />
-                ))
+                (() => {
+                  const items: React.ReactNode[] = [];
+                  visibleMessages.forEach((msg, i) => {
+                    const prev = visibleMessages[i - 1];
+                    const d = new Date(msg.created_at);
+                    const showDate = !prev || !isSameDay(new Date(prev.created_at), d);
+                    if (showDate) items.push(<DateSeparator key={`d-${msg.id}`} date={d} />);
+                    const isGrouped =
+                      !!prev && !showDate &&
+                      prev.sender_id === msg.sender_id &&
+                      d.getTime() - new Date(prev.created_at).getTime() < 5 * 60 * 1000 &&
+                      !msg.reply_to_id;
+                    items.push(
+                      <TeamMessageBubble
+                        key={msg.id}
+                        message={msg}
+                        isGrouped={isGrouped}
+                        currentUserId={user?.id}
+                        userRole={accountRole || undefined}
+                        onToggleReaction={handleToggleReaction}
+                        onSelectContact={handleSelectContact}
+                        onDeleteMessage={handleDeleteMessage}
+                        onReplyMessage={(m) => setReplyToMessage(m)}
+                        onEditMessage={handleEditMessage}
+                        onJumpToMessage={handleJumpToMessage}
+                        onConvertToTask={(m) => {
+                          setTaskMessage(m)
+                          setTaskModalOpen(true)
+                        }}
+                      />
+                    );
+                  });
+                  return items;
+                })()
               )}
               <div ref={messagesEndRef} />
             </div>
