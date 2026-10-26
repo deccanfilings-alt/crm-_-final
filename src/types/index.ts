@@ -433,7 +433,8 @@ export type AutomationStepType =
   | 'send_webhook'
   | 'close_conversation'
   | 'ai_generate'
-  | 'trigger_flow';
+  | 'trigger_flow'
+  | 'create_task';
 
 export type AutomationLogStatus = 'success' | 'partial' | 'failed';
 
@@ -541,6 +542,15 @@ export interface AiGenerateStepConfig {
   memory_limit?: number;
 }
 
+export interface CreateTaskStepConfig {
+  title: string;
+  description?: string;
+  assignee: 'conversation_assignee' | 'specific';
+  assignee_id?: string;
+  due_in_days?: number;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+}
+
 export type AutomationStepConfig =
   | SendMessageStepConfig
   | SendTemplateStepConfig
@@ -552,6 +562,8 @@ export type AutomationStepConfig =
   | ConditionStepConfig
   | SendWebhookStepConfig
   | AiGenerateStepConfig
+  | TriggerFlowStepConfig
+  | CreateTaskStepConfig
   | Record<string, never>
   | Record<string, unknown>;
 

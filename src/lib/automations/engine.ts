@@ -16,10 +16,13 @@ import {
   AssignConversationStepConfig,
   AiGenerateStepConfig,
   TriggerFlowStepConfig,
+  CreateTaskStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate } from './meta-send'
 import OpenAI from 'openai'
+import { format, addDays } from 'date-fns'
+import { todayIST } from '@/lib/dates'
 
 // ------------------------------------------------------------
 // Public API
@@ -693,6 +696,97 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       })
 
       return `trigger_flow: launched flow ${cfg.flow_id} (outcome: ${outcome.outcome})`
+    }
+
+    case 'create_task': {
+      const cfg = (step.step_config || {}) as unknown as CreateTaskStepConfig
+      if (!cfg.title || !cfg.title.trim()) {
+        throw new Error('create_task needs a title')
+      }
+
+      let contactData = null
+      if (args.contactId) {
+        contactData = await loadPlaceholderContact(db, args.automation.account_id, args.contactId)
+      }
+
+      const title = interpolate(resolveContactPlaceholders(cfg.title, contactData), args)
+      const description = cfg.description
+        ? interpolate(resolveContactPlaceholders(cfg.description, contactData), args)
+        : null
+
+      let conversationId = args.context.conversation_id
+      let conversationAssignee: string | null = null
+
+      if (conversationId) {
+        const { data: conv } = await db
+          .from('conversations')
+          .select('id, assigned_agent_id')
+          .eq('id', conversationId)
+          .maybeSingle()
+        if (conv) {
+          conversationAssignee = conv.assigned_agent_id || null
+        }
+      } else if (args.contactId) {
+        const { data: conv } = await db
+          .from('conversations')
+          .select('id, assigned_agent_id')
+          .eq('contact_id', args.contactId)
+          .eq('account_id', args.automation.account_id)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (conv) {
+          conversationId = conv.id
+          conversationAssignee = conv.assigned_agent_id || null
+        }
+      }
+
+      let finalAssigneeId: string | null = null
+      if (cfg.assignee === 'conversation_assignee') {
+        finalAssigneeId = conversationAssignee || args.automation.user_id
+      } else if (cfg.assignee === 'specific' && cfg.assignee_id) {
+        finalAssigneeId = cfg.assignee_id
+      } else {
+        finalAssigneeId = args.automation.user_id
+      }
+
+      const today = todayIST()
+      const dueDays = Number(cfg.due_in_days) || 0
+      const targetDate = format(addDays(new Date(today), dueDays), 'yyyy-MM-dd')
+
+      const { data: insertedTask, error: insertErr } = await db
+        .from('action_items')
+        .insert({
+          account_id: args.automation.account_id,
+          agent_id: args.automation.user_id,
+          assignee_id: finalAssigneeId,
+          title,
+          description: description || null,
+          priority: cfg.priority || 'normal',
+          target_date: targetDate,
+          contact_id: args.contactId || null,
+          conversation_id: conversationId || null,
+          source: 'automation',
+        })
+        .select('id')
+        .single()
+
+      if (insertErr) throw insertErr
+
+      if (finalAssigneeId && insertedTask?.id) {
+        await db.from('notifications').insert({
+          account_id: args.automation.account_id,
+          user_id: finalAssigneeId,
+          type: 'task_assigned',
+          title: `Task assigned: ${title}`,
+          body: description || 'New task assigned by automation',
+          link: `/action-items?task=${insertedTask.id}`,
+          read: false,
+          created_at: new Date().toISOString(),
+        })
+      }
+
+      return `task created (${insertedTask?.id || ''})`
     }
 
     default:

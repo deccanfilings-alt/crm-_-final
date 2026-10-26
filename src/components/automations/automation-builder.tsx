@@ -34,6 +34,7 @@ import {
   ArrowUp,
   Sparkles,
   Workflow,
+  CheckSquare,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -105,12 +106,14 @@ export const STEP_META: Record<AutomationStepType, StepMeta> = {
   close_conversation: { label: "Close Conversation", icon: CircleSlash, border: "border-l-primary" },
   ai_generate: { label: "AI Generate", icon: Sparkles, border: "border-l-purple-500" },
   trigger_flow: { label: "Trigger Flow", icon: Workflow, border: "border-l-indigo-500" },
+  create_task: { label: "Create Task", icon: CheckSquare, border: "border-l-primary" },
 }
 
 export const ADDABLE_STEPS: AutomationStepType[] = [
   "send_message",
   "send_template",
   "trigger_flow",
+  "create_task",
   "add_tag",
   "remove_tag",
   "assign_conversation",
@@ -174,6 +177,14 @@ export function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { provider: "openai", model: "gpt-4o-mini", prompt: "" }
     case "trigger_flow":
       return { flow_id: "" }
+    case "create_task":
+      return {
+        title: "",
+        description: "",
+        assignee: "conversation_assignee",
+        due_in_days: 0,
+        priority: "normal",
+      }
     default:
       return {}
   }
@@ -1409,6 +1420,68 @@ export function StepEditor({
           </p>
         </FieldBlock>
       )
+    case "create_task":
+      return (
+        <>
+          <FieldBlock label="Task Title (supports {{contact.name}})">
+            <Input
+              value={(cfg.title as string) ?? ""}
+              onChange={(e) => set({ title: e.target.value })}
+              placeholder="e.g. Follow up with {{contact.name}}"
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+          <FieldBlock label="Description / Notes (optional)">
+            <Textarea
+              value={(cfg.description as string) ?? ""}
+              onChange={(e) => set({ description: e.target.value })}
+              placeholder="Details or action points..."
+              className="min-h-[70px] bg-muted text-foreground"
+            />
+          </FieldBlock>
+          <FieldBlock label="Assignee">
+            <select
+              value={(cfg.assignee as string) ?? "conversation_assignee"}
+              onChange={(e) => set({ assignee: e.target.value })}
+              className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
+            >
+              <option value="conversation_assignee">Conversation Assignee (fallback to creator)</option>
+              <option value="specific">Specific Team Member</option>
+            </select>
+          </FieldBlock>
+          {cfg.assignee === "specific" && (
+            <FieldBlock label="Team Member">
+              <AgentSelect
+                value={(cfg.assignee_id as string) ?? ""}
+                onChange={(v) => set({ assignee_id: v })}
+              />
+            </FieldBlock>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <FieldBlock label="Due In (days)">
+              <Input
+                type="number"
+                min="0"
+                value={(cfg.due_in_days as number) ?? 0}
+                onChange={(e) => set({ due_in_days: parseInt(e.target.value, 10) || 0 })}
+                className="bg-muted text-foreground"
+              />
+            </FieldBlock>
+            <FieldBlock label="Priority">
+              <select
+                value={(cfg.priority as string) ?? "normal"}
+                onChange={(e) => set({ priority: e.target.value })}
+                className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground"
+              >
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </FieldBlock>
+          </div>
+        </>
+      )
     default:
       return null
   }
@@ -1443,6 +1516,8 @@ export function previewFor(step: BuilderStep): string {
       return (step.step_config.url as string) || "no url"
     case "trigger_flow":
       return `flow: ${(step.step_config.flow_id as string) || "unspecified"}`
+    case "create_task":
+      return (step.step_config.title as string) || "unspecified task"
     default:
       return ""
   }

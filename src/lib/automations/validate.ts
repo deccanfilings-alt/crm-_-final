@@ -156,6 +156,22 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
         issues.push({ path: `${path}.prompt`, message: 'prompt is required' })
       }
       break
+    case 'trigger_flow':
+      if (!nonEmpty(c.flow_id)) {
+        issues.push({ path: `${path}.flow_id`, message: 'flow is required' })
+      }
+      break
+    case 'create_task':
+      if (!nonEmpty(c.title)) {
+        issues.push({ path: `${path}.title`, message: 'title is required' })
+      }
+      if (c.assignee === 'specific' && !nonEmpty(c.assignee_id)) {
+        issues.push({
+          path: `${path}.assignee_id`,
+          message: 'assignee is required when assignee is "specific"',
+        })
+      }
+      break
     default:
       issues.push({ path, message: `unknown step type: ${step.step_type}` })
   }
