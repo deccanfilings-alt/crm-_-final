@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Pin, PinOff, LayoutDashboard } from "lucide-react";
+import { GripVertical, Pin, LayoutDashboard } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -63,15 +63,20 @@ export function SortableNavItem({
         isCustomizing && "border border-dashed border-border/70 hover:border-primary/50"
       )}
     >
-      {/* Drag handle visible when customizing or on hover when expanded */}
-      {!isCollapsed && isCustomizing && (
+      {/* Drag handle visible always on hover, and permanently when customizing */}
+      {!isCollapsed && (
         <button
           type="button"
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing p-1 -ml-1 text-muted-foreground/60 hover:text-foreground transition-colors shrink-0"
-          title="Drag to reorder"
-          aria-label="Drag to reorder"
+          className={cn(
+            "cursor-grab active:cursor-grabbing p-1 -ml-1 transition-all shrink-0 rounded hover:bg-muted/70 touch-none",
+            isCustomizing
+              ? "opacity-100 text-primary"
+              : "opacity-0 group-hover:opacity-70 hover:!opacity-100 text-muted-foreground/60"
+          )}
+          title="Drag up or down to reorder"
+          aria-label={`Drag to reorder ${item.label}`}
         >
           <GripVertical className="h-3.5 w-3.5" />
         </button>
@@ -92,6 +97,15 @@ export function SortableNavItem({
               isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
             )}
           />
+          {/* Subtle amber dot when pinned in collapsed mode */}
+          {isCollapsed && isPinned && (
+            <span
+              title="Pinned favorite"
+              className="absolute -top-1 -right-1 flex h-2 w-2"
+            >
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400 shadow-xs" />
+            </span>
+          )}
           {showUnreadDot && (
             <span
               aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
@@ -127,15 +141,15 @@ export function SortableNavItem({
             onTogglePin(item.href);
           }}
           className={cn(
-            "p-1 rounded-md transition-all shrink-0",
+            "p-1 rounded-md transition-all shrink-0 hover:bg-muted/60",
             isPinned
-              ? "text-amber-500 hover:text-amber-600 opacity-100"
+              ? "text-amber-500 opacity-100"
               : isCustomizing
-              ? "text-muted-foreground/50 hover:text-foreground opacity-100"
-              : "text-muted-foreground/40 hover:text-foreground opacity-0 group-hover:opacity-100"
+              ? "text-muted-foreground/60 hover:text-foreground opacity-100"
+              : "text-muted-foreground/40 hover:text-amber-500 opacity-0 group-hover:opacity-90"
           )}
           title={isPinned ? "Unpin from favorites" : "Pin to top favorites"}
-          aria-label={isPinned ? "Unpin item" : "Pin item"}
+          aria-label={isPinned ? `Unpin ${item.label}` : `Pin ${item.label}`}
         >
           <Pin
             className={cn(

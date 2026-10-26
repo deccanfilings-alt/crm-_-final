@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useSidebarPreferences } from "@/hooks/use-sidebar-preferences";
+import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Bot,
@@ -156,6 +157,22 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
     const { active, over } = event;
     if (over && active.id !== over.id) {
       reorder(String(active.id), String(over.id));
+      const activeItem = customizableNavMap.get(String(active.id));
+      if (activeItem) {
+        toast.success(`Moved "${activeItem.label}"`);
+      }
+    }
+  };
+
+  const handleTogglePin = (href: string) => {
+    const item = customizableNavMap.get(href);
+    const label = item?.label || "Item";
+    const willBePinned = !pinned.includes(href);
+    togglePin(href);
+    if (willBePinned) {
+      toast.success(`Pinned "${label}" to top favorites!`);
+    } else {
+      toast.info(`Unpinned "${label}" from favorites`);
     }
   };
 
@@ -307,7 +324,10 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                   {hasCustomization && (
                     <button
                       type="button"
-                      onClick={resetToDefault}
+                      onClick={() => {
+                        resetToDefault();
+                        toast.info("Menu reset to default order");
+                      }}
                       className="text-[10px] text-muted-foreground/70 hover:text-foreground hover:underline transition-colors capitalize font-normal px-1 py-0.5"
                       title="Reset menu order to default"
                     >
@@ -318,17 +338,31 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                     type="button"
                     onClick={() => setIsCustomizing((prev) => !prev)}
                     className={cn(
-                      "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors",
+                      "flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors border",
                       isCustomizing
-                        ? "bg-primary/20 text-primary font-semibold"
-                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                        ? "bg-primary/20 text-primary border-primary/30 font-semibold"
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground border-transparent"
                     )}
-                    title={isCustomizing ? "Done customizing" : "Drag and customize menu order"}
+                    title={isCustomizing ? "Done customizing" : "Toggle drag handles on all items"}
                   >
                     <SlidersHorizontal className="h-3 w-3" />
                     <span>{isCustomizing ? "Done" : "Reorder"}</span>
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Visual hint banner when customizing */}
+            {!isCollapsed && isCustomizing && (
+              <div className="mx-1 mb-2 px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-[11px] text-primary flex items-center justify-between">
+                <span>Drag items to reorder, or click pin to favorite.</span>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomizing(false)}
+                  className="font-bold underline text-[10px] ml-2 shrink-0 hover:text-primary/80"
+                >
+                  Done
+                </button>
               </div>
             )}
 
@@ -361,7 +395,7 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                         isCustomizing={isCustomizing}
                         showUnreadDot={showUnreadDot}
                         totalUnread={totalUnread}
-                        onTogglePin={togglePin}
+                        onTogglePin={handleTogglePin}
                       />
                     );
                   })}
