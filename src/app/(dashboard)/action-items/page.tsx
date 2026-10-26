@@ -3,17 +3,14 @@
 import { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { format, startOfWeek } from "date-fns";
-import { Plus, Kanban, List as ListIcon, Calendar as CalendarIcon, Target } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Plus, Kanban, List as ListIcon, Target } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { TaskBoard } from "@/components/tasks/task-board";
 import { TaskList } from "@/components/tasks/task-list";
 import { TaskSheet } from "@/components/tasks/task-sheet";
@@ -250,27 +247,21 @@ function ActionItemsContent() {
       <div className="flex items-center justify-between shrink-0">
         <h1 className="text-3xl font-bold tracking-tight">My Action Items</h1>
 
-        <Popover>
-          <PopoverTrigger
-            className={cn(
-              buttonVariants({ variant: "outline" }),
-              "w-[240px] justify-start text-left font-normal",
-              !currentDate && "text-muted-foreground"
-            )}
-          >
-            <CalendarIcon className="mr-2 h-4 w-4" />
-            {isToday
-              ? `Today, ${format(currentDate, "MMM d")}`
-              : format(currentDate, "MMM d, yyyy")}
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="end">
-            <Calendar
-              mode="single"
-              selected={currentDate}
-              onSelect={(date) => date && setCurrentDate(date)}
-            />
-          </PopoverContent>
-        </Popover>
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            value={format(currentDate, "yyyy-MM-dd")}
+            onChange={(e) => {
+              if (e.target.value) {
+                const [y, m, d] = e.target.value.split("-").map(Number);
+                if (y && m && d) {
+                  setCurrentDate(new Date(y, m - 1, d));
+                }
+              }
+            }}
+            className="w-[180px] h-9 text-sm font-medium bg-background cursor-pointer"
+          />
+        </div>
       </div>
 
       {overdueItems.length > 0 && isToday && (

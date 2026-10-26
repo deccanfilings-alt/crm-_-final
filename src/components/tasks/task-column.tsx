@@ -1,3 +1,5 @@
+"use client";
+
 import { useDroppable } from "@dnd-kit/core";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
