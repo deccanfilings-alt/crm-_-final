@@ -251,7 +251,7 @@ export function TeamPlanner() {
                         <SelectValue placeholder="Select member" />
                       </SelectTrigger>
                       <SelectContent>
-                        {members.map((m) => (
+                        {members.filter((m) => isOwner || m.role !== 'owner').map((m) => (
                           <SelectItem key={m.user_id} value={m.user_id}>
                             {m.full_name || m.email}
                           </SelectItem>

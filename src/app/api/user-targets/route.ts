@@ -30,7 +30,7 @@ export async function GET(req: Request) {
     .from('user_targets')
     .select(`
       *,
-      agent:profiles!user_targets_user_id_fkey(full_name, avatar_url),
+      agent:profiles!user_targets_user_id_fkey(full_name, avatar_url, account_role),
       action_items(id, title, status, estimated_hours)
     `)
     .eq('account_id', profile.account_id)
@@ -73,7 +73,12 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json(data);
+  let filteredData = data || [];
+  if (profile.account_role !== 'owner') {
+    filteredData = filteredData.filter((t: any) => t.agent?.account_role !== 'owner');
+  }
+
+  return NextResponse.json(filteredData);
 }
 
 export async function POST(req: Request) {

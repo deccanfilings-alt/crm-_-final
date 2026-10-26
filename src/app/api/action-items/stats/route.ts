@@ -41,5 +41,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  const mapped = (data || []).map((row: any) => ({
+    user_id: row.user_id,
+    full_name: row.full_name,
+    team: row.team,
+    open_tasks: Number(row.open_tasks ?? row.open_count ?? 0),
+    open_count: Number(row.open_tasks ?? row.open_count ?? 0),
+    overdue_tasks: Number(row.overdue_tasks ?? row.overdue_count ?? 0),
+    overdue_count: Number(row.overdue_tasks ?? row.overdue_count ?? 0),
+    due_today: Number(row.due_today ?? row.due_today_count ?? 0),
+    due_today_count: Number(row.due_today ?? row.due_today_count ?? 0),
+    completed_in_period: Number(row.completed_in_period ?? row.completed_count ?? 0),
+    completed_count: Number(row.completed_in_period ?? row.completed_count ?? 0),
+    completed_on_time: Number(row.completed_on_time ?? 0),
+    avg_days_late: row.avg_days_late !== null ? Number(row.avg_days_late) : null,
+    oldest_overdue: row.oldest_overdue || row.oldest_overdue_date || null,
+    oldest_overdue_date: row.oldest_overdue || row.oldest_overdue_date || null,
+  }));
+
+  return NextResponse.json(mapped);
 }

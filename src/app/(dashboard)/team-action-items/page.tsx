@@ -23,7 +23,9 @@ import {
   AlertTriangle,
   Clock,
   TrendingUp,
+  Crown,
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -81,6 +83,7 @@ interface PersonStats {
 }
 
 function TeamActionItemsContent() {
+  const { isOwner, isAdmin, user } = useAuth();
   const searchParams = useSearchParams();
   const taskParam = searchParams?.get("task");
 

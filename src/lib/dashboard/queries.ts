@@ -411,7 +411,7 @@ export async function loadTeamProductivity(
   const { data: profiles, error: profileErr } = await db
     .from('profiles')
     .select('user_id, full_name, avatar_url, agent_status, account_role')
-    .in('account_role', ['owner', 'admin', 'agent'])
+    .in('account_role', ['admin', 'agent'])
     .order('full_name', { ascending: true })
 
   if (profileErr) throw profileErr

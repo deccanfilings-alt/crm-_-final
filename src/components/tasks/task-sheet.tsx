@@ -451,7 +451,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
                     </SelectItem>
                   )}
 
-                  {members.filter(m => m.user_id !== user?.id).map(m => (
+                  {members.filter(m => m.user_id !== user?.id && (isOwner || m.role !== 'owner')).map(m => (
                     <SelectItem key={m.user_id} value={m.user_id}>
                       {m.full_name}
                     </SelectItem>
