@@ -86,6 +86,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
   const [contactSearch, setContactSearch] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedContact, setSelectedContact] = useState<any | null>(null);
+  const [dueTime, setDueTime] = useState("");
 
   // Events history state
   const [events, setEvents] = useState<ActionItemEvent[]>([]);
@@ -123,6 +124,21 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
         ...task,
         subtasks: task.subtasks || [],
       });
+      if (task.due_at) {
+        try {
+          const formatted = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Asia/Kolkata',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          }).format(new Date(task.due_at));
+          setDueTime(formatted);
+        } catch {
+          setDueTime('');
+        }
+      } else {
+        setDueTime('');
+      }
       setContactSearch("");
       setSearchResults([]);
       setIsCancelling(false);
@@ -233,7 +249,9 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
             priority: formData.priority,
             assignee_id: formData.assignee_id,
             target_date: formData.target_date,
-            due_at: formData.due_at,
+            due_at: formData.target_date && dueTime && dueTime.trim()
+              ? new Date(`${formData.target_date}T${dueTime.trim()}:00+05:30`).toISOString()
+              : null,
             subtasks: formData.subtasks,
             contact_id: formData.contact_id,
             deal_id: formData.deal_id,
@@ -380,7 +398,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label className="px-1">Target Date</Label>
               <Input 
@@ -388,6 +406,16 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
                 disabled={isAssigneeOnly}
                 value={formData.target_date || ""} 
                 onChange={(e) => setFormData({ ...formData, target_date: e.target.value })} 
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label className="px-1">Due Time (IST)</Label>
+              <Input 
+                type="time"
+                disabled={isAssigneeOnly}
+                value={dueTime} 
+                onChange={(e) => setDueTime(e.target.value)} 
               />
             </div>
 
