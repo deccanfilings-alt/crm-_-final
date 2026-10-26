@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { canViewRoom } from '@/lib/team-chat/room-access'
 
 export async function GET() {
   try {
@@ -38,7 +39,16 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to fetch channels' }, { status: 500 })
     }
 
-    let channels = initialChannels
+    // Filter out private rooms the user cannot view
+    const accessibleChannels: any[] = []
+    for (const ch of initialChannels || []) {
+      const allowed = await canViewRoom(supabase, ch.id)
+      if (allowed) {
+        accessibleChannels.push(ch)
+      }
+    }
+
+    let channels = accessibleChannels
 
     // Auto-seed default #general channel if no channels exist yet
     if (!channels || channels.length === 0) {

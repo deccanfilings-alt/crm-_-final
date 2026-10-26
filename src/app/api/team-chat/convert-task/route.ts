@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { canViewRoom } from '@/lib/team-chat/room-access'
 
 export async function POST(request: Request) {
   try {
@@ -26,7 +27,23 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { title, target_date, agent_id } = body
+    const { title, target_date, agent_id, message_id } = body
+
+    if (message_id) {
+      const { data: message } = await supabaseAdmin()
+        .from('team_messages')
+        .select('id, room_id')
+        .eq('id', message_id)
+        .eq('account_id', accountId)
+        .maybeSingle()
+      if (!message) {
+        return NextResponse.json({ error: 'Message not found' }, { status: 404 })
+      }
+      const hasAccess = await canViewRoom(supabase, message.room_id)
+      if (!hasAccess) {
+        return NextResponse.json({ error: 'Message not found' }, { status: 404 })
+      }
+    }
 
     if (!title || typeof title !== 'string' || !title.trim()) {
       return NextResponse.json({ error: 'Task title is required' }, { status: 400 })

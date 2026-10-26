@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { canViewRoom } from '@/lib/team-chat/room-access'
 
 export async function GET(
   request: Request,
@@ -38,6 +39,11 @@ export async function GET(
       .maybeSingle()
 
     if (roomErr || !room) {
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+    }
+
+    const hasAccess = await canViewRoom(supabase, roomId)
+    if (!hasAccess) {
       return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
@@ -83,6 +89,7 @@ export async function GET(
         .from('contacts')
         .select('id, name, phone, email, avatar_url')
         .in('id', allTaggedContactIds)
+        .eq('account_id', accountId)
 
       const { data: convs } = await supabaseAdmin()
         .from('conversations')
@@ -200,6 +207,11 @@ export async function POST(
       return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
+    const hasAccess = await canViewRoom(supabase, roomId)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+    }
+
     const body = await request.json()
     const {
       content,
@@ -272,6 +284,7 @@ export async function POST(
         .from('contacts')
         .select('id, name, phone, email, avatar_url')
         .in('id', message.tagged_contact_ids)
+        .eq('account_id', accountId)
 
       const { data: convs } = await supabaseAdmin()
         .from('conversations')
@@ -366,6 +379,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Message not found' }, { status: 404 })
     }
 
+    const hasAccess = await canViewRoom(supabase, message.room_id)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 })
+    }
+
     // Author or admin/owner can delete
     const isAuthor = message.sender_id === user.id
     const isAdminOrOwner = profile?.account_role === 'owner' || profile?.account_role === 'admin'
@@ -431,13 +449,18 @@ export async function PATCH(
 
     const { data: existing } = await supabaseAdmin()
       .from('team_messages')
-      .select('id, sender_id')
+      .select('id, sender_id, room_id')
       .eq('id', messageId)
       .eq('room_id', roomId)
       .maybeSingle()
 
     if (!existing) {
       return NextResponse.json({ error: 'Message not found' }, { status: 404 })
+    }
+
+    const hasAccess = await canViewRoom(supabase, existing.room_id)
+    if (!hasAccess) {
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
     const isAuthor = existing.sender_id === user.id

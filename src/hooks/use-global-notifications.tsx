@@ -50,7 +50,6 @@ export function GlobalNotificationProvider({ children }: { children: React.React
   const [loading, setLoading] = useState(false);
   const [desktopPermission, setDesktopPermission] = useState<NotificationPermission | "unsupported">("default");
   
-  const processedMessageIdsRef = useRef<Set<string>>(new Set());
   const assignedAgentsRef = useRef<Map<string, string | null>>(new Map());
   const channelsRef = useRef<RealtimeChannel[]>([]);
 
@@ -219,48 +218,6 @@ export function GlobalNotificationProvider({ children }: { children: React.React
       )
       .subscribe();
 
-    // 2. Realtime Team Messages & Mentions stream (account-wide)
-    const teamChatChannel = supabase
-      .channel(`realtime:team_messages:${accountId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "team_messages",
-          filter: `account_id=eq.${accountId}`,
-        },
-        async (payload) => {
-          const msg = payload.new as any;
-          if (!msg || msg.sender_id === user.id) return;
-          if (processedMessageIdsRef.current.has(msg.id)) return;
-          processedMessageIdsRef.current.add(msg.id);
-
-          const isDirectlyMentioned =
-            Array.isArray(msg.mentioned_user_ids) &&
-            msg.mentioned_user_ids.includes(user.id);
-
-          const text = msg.content || "";
-          const hasBroadcastMention =
-            /@channel\b/i.test(text) ||
-            /@everyone\b/i.test(text) ||
-            /@here\b/i.test(text);
-
-          if (isDirectlyMentioned || hasBroadcastMention) {
-            const prefix = hasBroadcastMention ? "📢 Broadcast in Team Chat" : "💬 Mentioned in Team Chat";
-            const preview = text.length > 90 ? text.slice(0, 90) + "…" : text;
-
-            dispatchAlert({
-              title: prefix,
-              body: preview,
-              link: `/team-chat?room=${msg.room_id}`,
-              type: "team_mention",
-            });
-          }
-        }
-      )
-      .subscribe();
-
     // 3. Realtime Tasks / Action Items stream
     const tasksChannel = supabase
       .channel(`realtime:tasks:${accountId}`)
@@ -337,7 +294,7 @@ export function GlobalNotificationProvider({ children }: { children: React.React
       )
       .subscribe();
 
-    channelsRef.current = [notificationsChannel, teamChatChannel, tasksChannel, conversationsChannel];
+    channelsRef.current = [notificationsChannel, tasksChannel, conversationsChannel];
 
     return () => {
       channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
