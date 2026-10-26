@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +42,7 @@ function SignupPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const router = useRouter();
   const supabase = createClient();
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -68,7 +69,7 @@ function SignupPageInner() {
       ? `${window.location.origin}/join/${encodeURIComponent(inviteToken)}`
       : undefined;
 
-    const { error } = await supabase.auth.signUp({
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -79,15 +80,55 @@ function SignupPageInner() {
       },
     });
 
-    if (error) {
-      if (error.message.toLowerCase().includes("confirmation email")) {
+    if (signUpError) {
+      // Even if confirmation email dispatch failed, try immediate sign in
+      const { data: directData, error: directLoginErr } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (!directLoginErr && directData?.session) {
+        if (inviteToken) {
+          router.push(`/join/${encodeURIComponent(inviteToken)}`);
+        } else {
+          router.push("/dashboard");
+        }
+        return;
+      }
+
+      if (signUpError.message.toLowerCase().includes("confirmation email")) {
         setError(
-          "Unable to send verification email. Your email service (Resend SMTP) rejected the message — please verify your sending domain at resend.com/domains, or temporarily disable 'Confirm email' in Supabase Dashboard -> Authentication -> Providers -> Email."
+          "Verification email could not be sent. If you already have an account, please sign in. If this is a self-hosted or testing environment, verify your SMTP credentials or turn off 'Confirm email' in Supabase Dashboard -> Authentication -> Providers -> Email."
         );
       } else {
-        setError(error.message);
+        setError(signUpError.message);
       }
       setLoading(false);
+      return;
+    }
+
+    // If session is already created (auto-confirmed), proceed immediately
+    if (signUpData?.session) {
+      if (inviteToken) {
+        router.push(`/join/${encodeURIComponent(inviteToken)}`);
+      } else {
+        router.push("/dashboard");
+      }
+      return;
+    }
+
+    // Try logging in immediately in case the DB trigger auto-confirmed the email
+    const { data: loginData, error: loginErr } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (!loginErr && loginData?.session) {
+      if (inviteToken) {
+        router.push(`/join/${encodeURIComponent(inviteToken)}`);
+      } else {
+        router.push("/dashboard");
+      }
       return;
     }
 

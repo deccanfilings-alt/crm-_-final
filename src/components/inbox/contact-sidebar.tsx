@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag, Conversation, Profile, Pipeline, PipelineStage } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, Conversation, Profile, Pipeline, PipelineStage, Quotation } from "@/types";
 import {
   Phone,
   Mail,
@@ -24,7 +24,11 @@ import {
   Loader2,
   ArrowUpRight,
   Pencil,
+  Receipt,
+  Printer,
+  Send,
 } from "lucide-react";
+import { QuotationBuilderModal } from "@/components/quotations/quotation-builder-modal";
 import { CURRENCIES } from "@/lib/currency";
 import { InstagramIcon as Instagram, FacebookIcon as Facebook } from "@/components/icons/social-icons";
 import { Button } from "@/components/ui/button";
@@ -64,6 +68,9 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
   const { user, accountId, defaultCurrency } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
+  const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
@@ -208,7 +215,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
 
     const supabase = createClient();
 
-    const [dealsRes, actionItemsRes, notesRes, tagsRes, profilesRes] = await Promise.all([
+    const [dealsRes, actionItemsRes, notesRes, tagsRes, profilesRes, quotesRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*), pipeline:pipelines(*)")
@@ -228,6 +235,11 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase
+        .from("quotations")
+        .select("*")
+        .eq("contact_id", contact.id)
+        .order("created_at", { ascending: false }),
       accountId ? supabase.from("profiles").select("*").eq("account_id", accountId) : Promise.resolve({ data: [] }),
     ]);
 
@@ -244,6 +256,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
       setTags(mapped);
     }
     if (profilesRes.data) setProfiles(profilesRes.data);
+    if (quotesRes?.data) setQuotations(quotesRes.data as Quotation[]);
   }, [contact, accountId]);
 
   useEffect(() => {
@@ -690,6 +703,118 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
             </div>
           </div>
 
+          {/* Quotations Section */}
+          <div className="p-4 border-b">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <Receipt className="h-3.5 w-3.5" />
+                <span>Quotations</span>
+                {quotations.length > 0 && <span className="text-muted-foreground/60">({quotations.length})</span>}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                onClick={() => { setEditingQuotation(null); setQuoteModalOpen(true); }}
+                title="Create Quotation"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            <div className="mt-2 space-y-2">
+              {quotations.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => { setEditingQuotation(null); setQuoteModalOpen(true); }}
+                  className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-center text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors"
+                >
+                  + Create quotation for this contact
+                </button>
+              ) : (
+                quotations.map((q) => (
+                  <div
+                    key={q.id}
+                    className="group rounded-lg bg-muted px-3 py-2 transition-colors hover:bg-muted/80"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="text-xs font-semibold text-primary truncate">
+                        {q.quote_number}
+                      </div>
+                      <span className="text-xs font-bold text-foreground shrink-0">
+                        ₹{Number(q.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-foreground truncate mt-0.5">
+                      {q.title}
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span className={`capitalize px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        q.status === 'accepted'
+                          ? 'bg-emerald-500/15 text-emerald-600'
+                          : q.status === 'sent'
+                          ? 'bg-sky-500/15 text-sky-600'
+                          : 'bg-muted-foreground/15 text-muted-foreground'
+                      }`}>
+                        {q.status}
+                      </span>
+
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-primary"
+                          title="Edit Quotation"
+                          onClick={() => {
+                            setEditingQuotation(q);
+                            setQuoteModalOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-sky-600"
+                          title="Send on WhatsApp"
+                          onClick={async () => {
+                            toast.info(`Sending ${q.quote_number} on WhatsApp...`);
+                            try {
+                              const res = await fetch(`/api/quotations/${q.id}/send-whatsapp`, { method: 'POST' });
+                              if (res.ok) {
+                                toast.success('Quotation sent on WhatsApp!');
+                                fetchContactData();
+                              } else {
+                                toast.error('Failed to send on WhatsApp');
+                              }
+                            } catch {
+                              toast.error('Network error');
+                            }
+                          }}
+                        >
+                          <Send className="h-3 w-3" />
+                        </Button>
+
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                          title="View / Print PDF"
+                          onClick={() => window.open(`/api/quotations/${q.id}/pdf`, '_blank')}
+                        >
+                          <Printer className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
           <div className="my-4 border-t border-border" />
 
           {/* Active Deals with Quick Create */}
@@ -1059,6 +1184,21 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Quotation Builder & Editor Modal */}
+      <QuotationBuilderModal
+        open={quoteModalOpen}
+        onOpenChange={(open) => {
+          setQuoteModalOpen(open);
+          if (!open) setEditingQuotation(null);
+        }}
+        initialContact={contact}
+        initialConversationId={conversation?.id || null}
+        quotationToEdit={editingQuotation}
+        onSuccess={() => {
+          fetchContactData();
+        }}
+      />
 
       {/* Quick Edit Contact Details Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
