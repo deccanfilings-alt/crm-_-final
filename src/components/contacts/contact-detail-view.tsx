@@ -45,6 +45,7 @@ import {
   Combine,
 } from 'lucide-react';
 import { MergeContactModal } from './merge-contact-modal';
+import { ContactRecurrencesTab } from './contact-recurrences-tab';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -500,6 +501,12 @@ export function ContactDetailView({
                 >
                   Deals
                 </TabsTrigger>
+                <TabsTrigger
+                  value="compliance"
+                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                >
+                  Compliance
+                </TabsTrigger>
               </TabsList>
 
               {/* Details Tab */}
@@ -704,6 +711,11 @@ export function ContactDetailView({
                     </Button>
                   </div>
                 )}
+              </TabsContent>
+
+              {/* Compliance Recurrences Tab (Task 10) */}
+              <TabsContent value="compliance" className="flex-1 overflow-y-auto px-4 py-3">
+                <ContactRecurrencesTab contactId={contact.id} />
               </TabsContent>
 
               {/* Deals Tab */}

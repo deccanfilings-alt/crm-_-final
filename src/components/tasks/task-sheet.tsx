@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, X, Trash2, User2, Search, UserCheck, Ban, History } from "lucide-react";
+import { Plus, X, Trash2, User2, Search, UserCheck, Ban, History, Repeat } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import type { ActionItem, ActionItemEvent } from "./types";
 import { formatDateTimeIST, getLateInfo } from "@/lib/dates";
@@ -95,6 +95,9 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
   // Cancellation state
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [isRepeating, setIsRepeating] = useState(false);
+  const [repeatFrequency, setRepeatFrequency] = useState<string>("monthly");
+  const [repeatLeadDays, setRepeatLeadDays] = useState<number>(3);
 
   const isCreator = Boolean(user && task && task.agent_id === user.id);
   const isAssignee = Boolean(user && task && task.assignee_id === user.id);
@@ -143,6 +146,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
       setSearchResults([]);
       setIsCancelling(false);
       setCancelReason(task.cancel_reason || "");
+      setIsRepeating(false);
     }
   }, [task]);
 
@@ -271,6 +275,23 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
       }
 
       const updated = await res.json();
+      if (isRepeating && formData.target_date) {
+        await fetch("/api/task-recurrences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: formData.title || task.title,
+            description: formData.description || null,
+            assignee_id: formData.assignee_id || user?.id,
+            priority: formData.priority || "medium",
+            contact_id: formData.contact_id || null,
+            frequency: repeatFrequency,
+            lead_days: repeatLeadDays,
+            next_due_date: formData.target_date,
+          }),
+        }).catch((e) => console.error("Failed to create recurrence:", e));
+        toast.success("Recurring schedule configured!");
+      }
       onUpdate({ ...task, ...updated });
       toast.success("Task updated");
       onOpenChange(false);
@@ -430,6 +451,56 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
               />
             </div>
           </div>
+
+          {/* Repeat option for recurring compliance */}
+          {!isAssigneeOnly && (
+            <div className="rounded-xl border border-border/70 p-3 bg-muted/20 space-y-2.5">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={isRepeating}
+                  onCheckedChange={(c) => setIsRepeating(Boolean(c))}
+                />
+                <span className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                  <Repeat className="h-3.5 w-3.5 text-primary" />
+                  Repeat task automatically (Compliance Schedule)
+                </span>
+              </label>
+
+              {isRepeating && (
+                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/40">
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-[11px] text-muted-foreground">Frequency</Label>
+                    <Select
+                      value={repeatFrequency}
+                      onValueChange={(val) => val && setRepeatFrequency(val)}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="quarterly">Quarterly</SelectItem>
+                        <SelectItem value="yearly">Yearly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-[11px] text-muted-foreground">Lead Days</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="30"
+                      value={repeatLeadDays}
+                      onChange={(e) => setRepeatLeadDays(Number(e.target.value) || 0)}
+                      className="h-8 text-xs"
+                      placeholder="3"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {(isOwner || isAdmin) && (
             <div className="flex flex-col gap-1.5">
