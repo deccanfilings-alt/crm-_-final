@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
+import { useSidebarPreferences } from "@/hooks/use-sidebar-preferences";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  Book,
   Bot,
   BrainCircuit,
   CheckSquare,
@@ -16,62 +16,22 @@ import {
   ChevronRight,
   Crown,
   GitBranch,
-  Kanban,
   LayoutDashboard,
   LogOut,
   Megaphone,
   MessageSquare,
-  Radio,
   Receipt,
   Settings,
   Shield,
+  SlidersHorizontal,
   User,
   UserCog,
   Users,
   UsersRound,
-  Workflow,
   X,
   Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
-
-// Per-role chip metadata used in the sidebar's account strip + the
-// Members tab roster. Keeping this near both consumers in a single
-// place avoids drift between the two surfaces — when a designer
-// wants to recolour "agent" rows, this is the one diff.
-const ROLE_CHIP: Record<
-  AccountRole,
-  { icon: typeof Crown; label: string; className: string }
-> = {
-  owner: {
-    icon: Crown,
-    label: "Owner",
-    // Amber: scarce, immutable, "the boss" — gets visual emphasis.
-    className:
-      "border-amber-500/40 bg-amber-500/10 text-amber-300",
-  },
-  admin: {
-    icon: Shield,
-    label: "Team Leader",
-    // Primary-tinted: significant but not as scarce as owner.
-    className:
-      "border-primary/40 bg-primary/10 text-primary",
-  },
-  agent: {
-    icon: UserCog,
-    label: "Team Member",
-    // Neutral slate: the operational default.
-    className:
-      "border-border bg-muted text-foreground",
-  },
-  viewer: {
-    icon: User,
-    label: "Viewer",
-    // Muted slate: read-only role; visually quieter than agent.
-    className:
-      "border-border bg-card text-muted-foreground",
-  },
-};
 import {
   Avatar,
   AvatarFallback,
@@ -84,20 +44,58 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { SortableNavItem, type NavItem } from "./sortable-nav-item";
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: typeof LayoutDashboard;
-  /**
-   * When true, the nav row renders a small "Beta" chip after the label.
-   * Purely informational — doesn't affect routing or access.
-   */
-  beta?: boolean;
-}
+// Per-role chip metadata used in the sidebar's account strip + the
+// Members tab roster. Keeping this near both consumers in a single
+// place avoids drift between the two surfaces.
+const ROLE_CHIP: Record<
+  AccountRole,
+  { icon: typeof Crown; label: string; className: string }
+> = {
+  owner: {
+    icon: Crown,
+    label: "Owner",
+    className: "border-amber-500/40 bg-amber-500/10 text-amber-300",
+  },
+  admin: {
+    icon: Shield,
+    label: "Team Leader",
+    className: "border-primary/40 bg-primary/10 text-primary",
+  },
+  agent: {
+    icon: UserCog,
+    label: "Team Member",
+    className: "border-border bg-muted text-foreground",
+  },
+  viewer: {
+    icon: User,
+    label: "Viewer",
+    className: "border-border bg-card text-muted-foreground",
+  },
+};
 
-const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+const topFixedItem: NavItem = {
+  href: "/dashboard",
+  label: "Dashboard",
+  icon: LayoutDashboard,
+};
+
+const customizableNavItems: NavItem[] = [
   { href: "/inbox", label: "Inbox", icon: MessageSquare },
   { href: "/team-chat", label: "Team Chat", icon: UsersRound },
   { href: "/contacts", label: "Contacts", icon: Users },
@@ -110,6 +108,10 @@ const navItems: NavItem[] = [
   { href: "/team-action-items", label: "Team Action Items", icon: CheckSquare },
   { href: "/knowledge-bases", label: "Knowledge", icon: BrainCircuit },
 ];
+
+const customizableNavMap = new Map<string, NavItem>(
+  customizableNavItems.map((item) => [item.href, item])
+);
 
 const bottomNavItems = [
   { href: "/settings", label: "Settings", icon: Settings },
@@ -125,31 +127,61 @@ interface SidebarProps {
 
 export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const { user, profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
-  // Only surface the account-name strip when it actually carries
-  // information. A solo user's personal account is named after them
-  // (the 017 signup trigger seeds it from `full_name`), so showing it
-  // here would just duplicate the user name in the footer below. Once
-  // the account is renamed or the user joins a shared account, the
-  // name diverges and the strip becomes meaningful — that's the signal
-  // we gate on. Wait for the profile fetch to settle first, otherwise
-  // the strip flashes in once the row resolves (a layout jump).
+
+  const {
+    order,
+    pinned,
+    isCustomizing,
+    setIsCustomizing,
+    reorder,
+    togglePin,
+    resetToDefault,
+    hasCustomization,
+  } = useSidebarPreferences(user?.id);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      reorder(String(active.id), String(over.id));
+    }
+  };
+
+  // Reorder items according to preferences order, filtering by role permissions
+  const visibleCustomizableItems = useMemo(() => {
+    const items: NavItem[] = [];
+    for (const href of order) {
+      const item = customizableNavMap.get(href);
+      if (!item) continue;
+      if (item.href === "/team-action-items" && accountRole !== "admin" && accountRole !== "owner") {
+        continue;
+      }
+      items.push(item);
+    }
+    return items;
+  }, [order, accountRole]);
+
   const showAccountStrip =
     !profileLoading &&
     !!account?.name &&
     account.name !== profile?.full_name;
 
-  // Close the drawer when route changes — users opened it to navigate,
-  // so once they pick a destination the drawer should get out of the way.
   useEffect(() => {
     onClose?.();
-    // Only pathname drives this — onClose identity doesn't need to re-run it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Lock body scroll and allow Escape to close while the drawer is open on
-  // mobile. No-ops on desktop because the sidebar isn't positioned there.
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -164,43 +196,72 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
     };
   }, [open, onClose]);
 
+  const isDashboardActive = pathname === "/dashboard";
+  const dashboardLinkContent = (
+    <Link
+      href="/dashboard"
+      className={cn(
+        "group relative flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 lg:py-2 overflow-hidden",
+        isCollapsed ? "justify-center lg:px-0" : "gap-3",
+        isDashboardActive
+          ? "bg-primary/12 text-primary font-semibold shadow-xs before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-primary before:shadow-[0_0_8px_var(--color-primary)]"
+          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+      )}
+    >
+      <div className="relative flex shrink-0 items-center justify-center transition-transform duration-150 group-hover:scale-105">
+        <LayoutDashboard
+          className={cn(
+            "h-4 w-4 transition-colors",
+            isDashboardActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+          )}
+        />
+      </div>
+      <span className={cn("flex-1 truncate tracking-tight", isCollapsed && "lg:hidden")}>
+        Dashboard
+      </span>
+    </Link>
+  );
+
   return (
     <>
-      {/* Backdrop — only exists on mobile and only when open. Clicking
-          it closes the drawer. Hidden from lg+ since the sidebar is
-          part of the main flex row there. */}
+      {/* Backdrop for mobile */}
       <button
         type="button"
         aria-label="Close menu"
         onClick={onClose}
         className={cn(
           "fixed inset-0 z-30 bg-background/70 backdrop-blur-sm transition-opacity lg:hidden",
-          open
-            ? "pointer-events-auto opacity-100"
-            : "pointer-events-none opacity-0",
+          open ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         )}
       />
 
       <aside
         className={cn(
-          // Mobile: fixed drawer that slides in from the left.
           "fixed inset-y-0 left-0 z-40 flex h-full flex-col border-r border-border bg-card",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
-          // Desktop: static, always visible — reset all the mobile framing.
           "lg:static lg:z-0 lg:translate-x-0 lg:transition-all lg:duration-300",
-          // Width based on collapsed state on desktop, full width on mobile
           "w-64",
           isCollapsed && "lg:w-[72px]"
         )}
         aria-label="Primary"
       >
-        <div className={cn("flex h-14 shrink-0 items-center gap-2 border-b border-border/80 px-4", isCollapsed ? "justify-center px-0 lg:px-0" : "justify-between")}>
+        <div
+          className={cn(
+            "flex h-14 shrink-0 items-center gap-2 border-b border-border/80 px-4",
+            isCollapsed ? "justify-center px-0 lg:px-0" : "justify-between"
+          )}
+        >
           <Link href="/dashboard" className="flex items-center gap-2.5 group">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-xs shadow-primary/30 transition-transform duration-200 group-hover:scale-105">
               <MessageSquare className="h-4 w-4" />
             </div>
-            <span className={cn("text-sm font-bold tracking-tight text-foreground transition-opacity", isCollapsed && "lg:hidden")}>
+            <span
+              className={cn(
+                "text-sm font-bold tracking-tight text-foreground transition-opacity",
+                isCollapsed && "lg:hidden"
+              )}
+            >
               Deccan Filings
             </span>
           </Link>
@@ -217,82 +278,101 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">
           <TooltipProvider delay={0}>
-            <ul className="flex flex-col gap-1">
-              {navItems.map((item) => {
-                if (item.href === "/team-action-items" && accountRole !== 'admin' && accountRole !== 'owner') {
-                  return null;
-                }
-
-                const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/dashboard" && pathname.startsWith(item.href));
-
-                const showUnreadDot =
-                  item.href === "/inbox" && totalUnread > 0 && !isActive;
-
-                const linkContent = (
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      // Taller on mobile so fingers can hit the row reliably (≥44px).
-                      "group relative flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 lg:py-2 overflow-hidden",
-                      isCollapsed ? "justify-center lg:px-0" : "gap-3",
-                      isActive
-                        ? "bg-primary/12 text-primary font-semibold shadow-xs before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-primary before:shadow-[0_0_8px_var(--color-primary)]"
-                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-                    )}
-                  >
-                    <div className="relative flex shrink-0 items-center justify-center transition-transform duration-150 group-hover:scale-105">
-                      <item.icon className={cn("h-4 w-4 transition-colors", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
-                      {showUnreadDot && (
-                        <span
-                          aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
-                          className="absolute -right-1.5 -top-1.5 flex h-2 w-2"
-                        >
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                          <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-                        </span>
-                      )}
-                    </div>
-                    <span className={cn("flex-1 truncate tracking-tight", isCollapsed && "lg:hidden")}>{item.label}</span>
-                    {item.beta && !isCollapsed && (
-                      <span
-                        aria-label="Beta feature"
-                        className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300"
-                      >
-                        Beta
-                      </span>
-                    )}
-                  </Link>
-                );
-
-                return (
-                  <li key={item.href}>
-                    {isCollapsed ? (
-                      <Tooltip>
-                        <TooltipTrigger className="w-full">
-                          {linkContent}
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="flex items-center gap-2">
-                          {item.label}
-                          {item.beta && (
-                            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-300">
-                              Beta
-                            </span>
-                          )}
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      linkContent
-                    )}
-                  </li>
-                );
-              })}
+            {/* Top Fixed Anchor: Dashboard */}
+            <ul className="flex flex-col gap-1 mb-2">
+              <li>
+                {isCollapsed ? (
+                  <Tooltip>
+                    <TooltipTrigger className="w-full">{dashboardLinkContent}</TooltipTrigger>
+                    <TooltipContent side="right">Dashboard</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  dashboardLinkContent
+                )}
+              </li>
             </ul>
+
+            {/* Customization header */}
+            {!isCollapsed && (
+              <div className="flex items-center justify-between px-2.5 pt-2 pb-1.5 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground/60 select-none">
+                <span className="flex items-center gap-1.5">
+                  Menu
+                  {pinned.length > 0 && (
+                    <span className="text-[10px] text-amber-500 font-normal lowercase">
+                      ({pinned.length} pinned)
+                    </span>
+                  )}
+                </span>
+                <div className="flex items-center gap-1">
+                  {hasCustomization && (
+                    <button
+                      type="button"
+                      onClick={resetToDefault}
+                      className="text-[10px] text-muted-foreground/70 hover:text-foreground hover:underline transition-colors capitalize font-normal px-1 py-0.5"
+                      title="Reset menu order to default"
+                    >
+                      Reset
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomizing((prev) => !prev)}
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors",
+                      isCustomizing
+                        ? "bg-primary/20 text-primary font-semibold"
+                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                    )}
+                    title={isCustomizing ? "Done customizing" : "Drag and customize menu order"}
+                  >
+                    <SlidersHorizontal className="h-3 w-3" />
+                    <span>{isCustomizing ? "Done" : "Reorder"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Customizable & Pinnable items list */}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={visibleCustomizableItems.map((item) => item.href)}
+                strategy={verticalListSortingStrategy}
+              >
+                <ul className="flex flex-col gap-1">
+                  {visibleCustomizableItems.map((item) => {
+                    const isActive =
+                      pathname === item.href ||
+                      (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                    const showUnreadDot =
+                      item.href === "/inbox" && totalUnread > 0 && !isActive;
+                    const isPinned = pinned.includes(item.href);
+
+                    return (
+                      <SortableNavItem
+                        key={item.href}
+                        item={item}
+                        isActive={isActive}
+                        isCollapsed={isCollapsed}
+                        isPinned={isPinned}
+                        isCustomizing={isCustomizing}
+                        showUnreadDot={showUnreadDot}
+                        totalUnread={totalUnread}
+                        onTogglePin={togglePin}
+                      />
+                    );
+                  })}
+                </ul>
+              </SortableContext>
+            </DndContext>
           </TooltipProvider>
 
           <div className="my-4 border-t border-border" />
 
+          {/* Bottom Nav: Settings */}
           <TooltipProvider delay={0}>
             <ul className="flex flex-col gap-1">
               {bottomNavItems.map((item) => {
@@ -305,11 +385,20 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                       isCollapsed ? "justify-center lg:px-0" : "gap-3",
                       isActive
                         ? "bg-primary/12 text-primary font-semibold shadow-xs before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-primary before:shadow-[0_0_8px_var(--color-primary)]"
-                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                     )}
                   >
-                    <item.icon className={cn("h-4 w-4 shrink-0 transition-all duration-150 group-hover:scale-105", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
-                    <span className={cn("truncate tracking-tight", isCollapsed && "lg:hidden")}>{item.label}</span>
+                    <item.icon
+                      className={cn(
+                        "h-4 w-4 shrink-0 transition-all duration-150 group-hover:scale-105",
+                        isActive
+                          ? "text-primary"
+                          : "text-muted-foreground group-hover:text-foreground"
+                      )}
+                    />
+                    <span className={cn("truncate tracking-tight", isCollapsed && "lg:hidden")}>
+                      {item.label}
+                    </span>
                   </Link>
                 );
 
@@ -317,12 +406,8 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                   <li key={item.href}>
                     {isCollapsed ? (
                       <Tooltip>
-                        <TooltipTrigger className="w-full">
-                          {linkContent}
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                          {item.label}
-                        </TooltipContent>
+                        <TooltipTrigger className="w-full">{linkContent}</TooltipTrigger>
+                        <TooltipContent side="right">{item.label}</TooltipContent>
                       </Tooltip>
                     ) : (
                       linkContent
@@ -336,12 +421,6 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
 
         {/* User section */}
         <div className="shrink-0 border-t border-border p-3">
-          {/* Account name display — surfaced only when the account
-              name differs from the user's own name (see
-              `showAccountStrip`). For a default solo account the two
-              match, so we hide it to avoid duplicating the user name
-              below; for renamed or shared accounts it tells the user
-              which account they're acting in. */}
           {/* Collapse Toggle */}
           <div className="mb-2 hidden lg:flex">
             <button
@@ -353,7 +432,11 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
               aria-label="Toggle sidebar"
             >
               <div className="flex items-center justify-center">
-                {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+                {isCollapsed ? (
+                  <ChevronRight className="h-4 w-4" />
+                ) : (
+                  <ChevronLeft className="h-4 w-4" />
+                )}
               </div>
               <span className={cn("text-xs font-medium", isCollapsed && "hidden")}>Collapse</span>
             </button>
@@ -381,14 +464,17 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
               ) : null}
             </div>
           ) : null}
+
           <DropdownMenu>
-            <DropdownMenuTrigger className={cn("flex w-full items-center rounded-lg py-2 text-left transition-colors hover:bg-muted/60 focus:bg-muted/60 focus:outline-none data-popup-open:bg-muted/60", isCollapsed ? "justify-center px-0" : "px-3 gap-3")}>
+            <DropdownMenuTrigger
+              className={cn(
+                "flex w-full items-center rounded-lg py-2 text-left transition-colors hover:bg-muted/60 focus:bg-muted/60 focus:outline-none data-popup-open:bg-muted/60",
+                isCollapsed ? "justify-center px-0" : "px-3 gap-3"
+              )}
+            >
               <Avatar className="size-8 shrink-0">
                 {profile?.avatar_url ? (
-                  <AvatarImage
-                    src={profile.avatar_url}
-                    alt={profile.full_name ?? "Avatar"}
-                  />
+                  <AvatarImage src={profile.avatar_url} alt={profile.full_name ?? "Avatar"} />
                 ) : null}
                 <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
                   {profile?.full_name?.charAt(0)?.toUpperCase() ??
@@ -400,9 +486,7 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                 <p className="truncate text-sm font-medium text-foreground">
                   {profile?.full_name ?? "User"}
                 </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {profile?.email ?? ""}
-                </p>
+                <p className="truncate text-xs text-muted-foreground">{profile?.email ?? ""}</p>
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -438,7 +522,7 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
               <DropdownMenuSeparator className="bg-border" />
               <DropdownMenuItem
                 onClick={signOut}
-                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
+                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
               >
                 <LogOut className="size-4" />
                 Sign out
