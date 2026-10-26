@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { format, isSameDay, isToday, isYesterday } from "date-fns"
+import { findFirstUnreadIndex } from "@/lib/team-chat/unread-utils"
 import { useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/lib/supabase/client"
 import { TeamChannelList, type TeammateMember } from "@/components/team-chat/team-channel-list"
@@ -74,6 +75,9 @@ export default function TeamChatPage() {
   const [hasMore, setHasMore] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [showScrollDown, setShowScrollDown] = useState(false)
+  const [currentRoomLastReadAt, setCurrentRoomLastReadAt] = useState<string | null>(null)
+  const roomLastReadMap = useRef<Map<string, string | null>>(new Map())
+  const readDebounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const messagesRef = useRef<TeamMessage[]>(messages)
@@ -144,6 +148,28 @@ export default function TeamChatPage() {
         m.sender?.full_name?.toLowerCase().includes(q)
     )
   }, [messages, searchQuery])
+
+
+// Mark active room read
+  const markRoomRead = useCallback(async (roomId: string) => {
+    try {
+      await fetch(`/api/team-chat/rooms/${roomId}/read`, { method: "POST" })
+      setUnreadCounts((prev) => ({ ...prev, [roomId]: 0 }))
+    } catch (err) {
+      console.error("[team-chat] Failed to mark room read:", err)
+    }
+  }, [])
+
+// Mark room read when tab becomes visible
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && activeRoomIdRef.current) {
+        markRoomRead(activeRoomIdRef.current)
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility)
+    return () => document.removeEventListener("visibilitychange", handleVisibility)
+  }, [markRoomRead])
 
   // Scroll to bottom
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -230,6 +256,17 @@ export default function TeamChatPage() {
         setDirectMessages(dms)
         setTeammates(data.teammates || [])
 
+        const initialUnreads: Record<string, number> = {}
+        channels.forEach((c: any) => {
+          if (c.unread_count) initialUnreads[c.id] = c.unread_count
+          if (c.last_read_at) roomLastReadMap.current.set(c.id, c.last_read_at)
+        })
+        dms.forEach((d: any) => {
+          if (d.unread_count) initialUnreads[d.id] = d.unread_count
+          if (d.last_read_at) roomLastReadMap.current.set(d.id, d.last_read_at)
+        })
+        setUnreadCounts(initialUnreads)
+
         if (!activeRoomId) {
           const first = channels[0] || dms[0]
           if (first) {
@@ -263,7 +300,12 @@ export default function TeamChatPage() {
         hasMoreRef.current = more
 
         requestAnimationFrame(() => {
-          scrollToBottom("auto")
+          const marker = document.getElementById("new-messages-marker")
+          if (marker) {
+            marker.scrollIntoView({ behavior: "auto", block: "center" })
+          } else {
+            scrollToBottom("auto")
+          }
         })
       }
     } catch (err) {
@@ -276,13 +318,17 @@ export default function TeamChatPage() {
 
   useEffect(() => {
     if (activeRoomId) {
+      const prevRead = roomLastReadMap.current.get(activeRoomId) || null
+      setCurrentRoomLastReadAt(prevRead)
+      markRoomRead(activeRoomId)
+
       loadMessages(activeRoomId)
       setReplyToMessage(null)
       setSearchQuery("")
     } else {
       setMessages([])
     }
-  }, [activeRoomId, loadMessages])
+  }, [activeRoomId, loadMessages, markRoomRead])
 
   // Global Realtime Presence (Tracks who is currently online in real-time)
   useEffect(() => {
@@ -377,6 +423,14 @@ export default function TeamChatPage() {
                   if (prev.some((m) => m.id === fetched.id)) return prev
                   return [...prev, fetched]
                 })
+
+                // Debounce marking room read if active tab is visible
+                if (document.visibilityState === "visible" && activeRoomIdRef.current) {
+                  if (readDebounceTimerRef.current) clearTimeout(readDebounceTimerRef.current)
+                  readDebounceTimerRef.current = setTimeout(() => {
+                    if (activeRoomIdRef.current) markRoomRead(activeRoomIdRef.current)
+                  }, 2000)
+                }
 
                 // Auto-scroll rule: near bottom or own message
                 const el = scrollContainerRef.current
@@ -975,7 +1029,23 @@ export default function TeamChatPage() {
               ) : (
                 (() => {
                   const items: React.ReactNode[] = [];
+                  const firstUnreadIdx = findFirstUnreadIndex(visibleMessages, currentRoomLastReadAt, user?.id);
                   visibleMessages.forEach((msg, i) => {
+                    if (i === firstUnreadIdx) {
+                      items.push(
+                        <div
+                          key="new-messages-marker"
+                          id="new-messages-marker"
+                          className="my-3 flex items-center gap-3 px-4 select-none"
+                        >
+                          <div className="h-px flex-1 bg-destructive/50" />
+                          <span className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-[11px] font-semibold text-destructive uppercase tracking-wider">
+                            New messages
+                          </span>
+                          <div className="h-px flex-1 bg-destructive/50" />
+                        </div>
+                      );
+                    }
                     const prev = visibleMessages[i - 1];
                     const d = new Date(msg.created_at);
                     const showDate = !prev || !isSameDay(new Date(prev.created_at), d);

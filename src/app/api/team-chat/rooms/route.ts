@@ -69,6 +69,15 @@ export async function GET() {
       }
     }
 
+    // Fetch unread counts per room for the current user
+    const { data: unreadRows } = await supabase.rpc('team_chat_unread_counts')
+    const unreadMap = new Map<string, { unread: number; last_read_at: string | null }>(
+      (unreadRows || []).map((u: any) => [
+        u.room_id,
+        { unread: Number(u.unread || 0), last_read_at: u.last_read_at },
+      ])
+    )
+
     // Fetch latest message for each channel
     const channelsWithLastMessage = await Promise.all(
       (channels || []).map(async (room: any) => {
@@ -90,9 +99,12 @@ export async function GET() {
           senderName = senderProf?.full_name || undefined
         }
 
+        const unreadInfo = unreadMap.get(room.id) || { unread: 0, last_read_at: null }
         return {
           ...room,
           is_direct: false,
+          unread_count: unreadInfo.unread,
+          last_read_at: unreadInfo.last_read_at,
           last_message: lastMsg
             ? {
                 content: lastMsg.content,
@@ -135,9 +147,12 @@ export async function GET() {
           .limit(1)
           .maybeSingle()
 
+        const unreadInfo = unreadMap.get(dmRoom.id) || { unread: 0, last_read_at: null }
         return {
           ...dmRoom,
           is_direct: true,
+          unread_count: unreadInfo.unread,
+          last_read_at: unreadInfo.last_read_at,
           dm_partner: partner,
           last_message: lastMsg || null,
         }

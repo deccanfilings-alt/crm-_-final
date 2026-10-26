@@ -78,3 +78,55 @@ CREATE POLICY team_message_reactions_insert ON team_message_reactions FOR INSERT
               AND EXISTS (SELECT 1 FROM team_messages m
                           WHERE m.id = team_message_reactions.message_id
                             AND public.can_view_team_room(m.room_id)));
+
+-- ============================================================
+-- §3. Read state per person per room
+-- ============================================================
+CREATE TABLE IF NOT EXISTS team_room_reads (
+  room_id UUID NOT NULL REFERENCES team_rooms(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  last_read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (room_id, user_id)
+);
+ALTER TABLE team_room_reads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS team_room_reads_own ON team_room_reads;
+CREATE POLICY team_room_reads_own ON team_room_reads FOR ALL
+  USING (user_id = auth.uid())
+  WITH CHECK (user_id = auth.uid() AND public.can_view_team_room(room_id));
+
+-- Everyone starts with nothing unread
+INSERT INTO team_room_reads (room_id, user_id, last_read_at)
+SELECT r.id, p.user_id, NOW()
+FROM team_rooms r
+JOIN profiles p ON p.account_id = r.account_id
+WHERE NOT COALESCE(r.is_direct, FALSE) OR p.user_id = ANY (r.dm_user_ids)
+ON CONFLICT (room_id, user_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.team_chat_unread_counts()
+RETURNS TABLE (room_id UUID, unread BIGINT, last_read_at TIMESTAMPTZ)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH visible AS (
+    SELECT r.id FROM team_rooms r
+    WHERE is_account_member(r.account_id) AND public.can_view_team_room(r.id)
+  ),
+  reads AS (
+    SELECT v.id AS room_id,
+           -- a room never opened counts only the last 7 days as unread
+           COALESCE(rr.last_read_at, NOW() - INTERVAL '7 days') AS last_read_at
+    FROM visible v
+    LEFT JOIN team_room_reads rr ON rr.room_id = v.id AND rr.user_id = auth.uid()
+  )
+  SELECT rd.room_id, COUNT(m.id) AS unread, rd.last_read_at
+  FROM reads rd
+  LEFT JOIN team_messages m
+    ON m.room_id = rd.room_id
+   AND m.created_at > rd.last_read_at
+   AND m.sender_id <> auth.uid()
+  GROUP BY rd.room_id, rd.last_read_at;
+$$;
+GRANT EXECUTE ON FUNCTION public.team_chat_unread_counts() TO authenticated;
