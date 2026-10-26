@@ -55,6 +55,24 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Enrich with creator profile name if created_by is set
+  const creatorIds = Array.from(
+    new Set((data || []).map((t: any) => t.created_by).filter(Boolean))
+  );
+  if (creatorIds.length > 0) {
+    const { data: creators } = await supabase
+      .from('profiles')
+      .select('user_id, full_name')
+      .in('user_id', creatorIds);
+
+    const creatorMap = new Map((creators || []).map((c: any) => [c.user_id, c.full_name]));
+    for (const t of data as any[]) {
+      if (t.created_by) {
+        t.creator = { full_name: creatorMap.get(t.created_by) || null };
+      }
+    }
+  }
+
   return NextResponse.json(data);
 }
 
@@ -65,7 +83,7 @@ export async function POST(req: Request) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('account_id')
+    .select('account_id, account_role')
     .eq('user_id', user.id)
     .single();
 
@@ -81,11 +99,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
+    const isAdminOrOwner = ['admin', 'owner'].includes(profile.account_role);
+    const targetUserId = (isAdminOrOwner && body.user_id) ? body.user_id : user.id;
+
+    // If setting target for another user, verify they belong to this account
+    if (targetUserId !== user.id) {
+      const { data: targetProfile } = await supabase
+        .from('profiles')
+        .select('user_id')
+        .eq('user_id', targetUserId)
+        .eq('account_id', profile.account_id)
+        .maybeSingle();
+
+      if (!targetProfile) {
+        return NextResponse.json({ error: "Target member not found in account" }, { status: 400 });
+      }
+    }
+
     const { data, error } = await supabase
       .from('user_targets')
       .insert({
         account_id: profile.account_id,
-        user_id: user.id,
+        user_id: targetUserId,
+        created_by: user.id,
         period_type: body.period_type,
         period_start_date: body.period_start_date,
         title: body.title,

@@ -30,6 +30,11 @@ interface ActionItem {
 
 interface UserTarget {
   id: string;
+  user_id?: string;
+  created_by?: string | null;
+  creator?: {
+    full_name: string;
+  } | null;
   period_type: "weekly" | "quarterly";
   period_start_date: string;
   title: string;
@@ -473,9 +478,19 @@ export function UserPlanner() {
                       ) : (
                         /* ── Display Mode ── */
                         <>
-                          <CardTitle className="text-base truncate">
-                            {target.title}
-                          </CardTitle>
+                          <div className="flex items-center gap-2">
+                            <CardTitle className="text-base truncate">
+                              {target.title}
+                            </CardTitle>
+                            {target.creator?.full_name && target.created_by && user && target.created_by !== user.id && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] bg-muted/60 text-muted-foreground font-normal shrink-0"
+                              >
+                                Set by {target.creator.full_name}
+                              </Badge>
+                            )}
+                          </div>
                           {target.description && (
                             <CardDescription className="mt-0.5 line-clamp-1 text-xs">
                               {target.description}

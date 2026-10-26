@@ -254,3 +254,14 @@ AS $$
   ORDER BY 5 DESC, p.full_name;
 $$;
 GRANT EXECUTE ON FUNCTION public.task_stats(DATE, DATE) TO authenticated;
+
+-- ============================================================
+-- §5. Admins manage team targets
+-- ============================================================
+DROP POLICY IF EXISTS user_targets_admin_all ON user_targets;
+CREATE POLICY user_targets_admin_all ON user_targets FOR ALL
+  USING (is_account_member(account_id, 'admin'))
+  WITH CHECK (is_account_member(account_id, 'admin')
+              AND EXISTS (SELECT 1 FROM profiles p
+                          WHERE p.user_id = user_targets.user_id AND p.account_id = user_targets.account_id));
+ALTER TABLE user_targets ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;

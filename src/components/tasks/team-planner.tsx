@@ -7,7 +7,7 @@ import {
 } from "date-fns";
 import {
   ChevronLeft, ChevronRight, Target, Clock, Activity,
-  CheckCircle2, Circle, ChevronDown, ChevronUp,
+  CheckCircle2, Circle, ChevronDown, ChevronUp, Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -15,6 +15,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogTrigger, DialogFooter
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from "@/components/ui/select";
 
 interface ActionItem {
   id: string;
@@ -27,6 +38,10 @@ interface ActionItem {
 interface UserTarget {
   id: string;
   user_id: string;
+  created_by?: string | null;
+  creator?: {
+    full_name: string;
+  } | null;
   period_type: "weekly" | "quarterly";
   period_start_date: string;
   title: string;
@@ -52,12 +67,32 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function TeamPlanner() {
+  const { isOwner, isAdmin } = useAuth();
   const [periodType, setPeriodType] = useState<"weekly" | "quarterly">("weekly");
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [targets, setTargets] = useState<UserTarget[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
   const [expandedGoals, setExpandedGoals] = useState<Set<string>>(new Set());
+
+  // Add target dialog state
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [members, setMembers] = useState<any[]>([]);
+  const [targetMemberId, setTargetMemberId] = useState("");
+  const [targetTitle, setTargetTitle] = useState("");
+  const [targetDescription, setTargetDescription] = useState("");
+  const [savingTarget, setSavingTarget] = useState(false);
+
+  useEffect(() => {
+    if (isOwner || isAdmin) {
+      fetch("/api/account/members")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.members) setMembers(data.members);
+        })
+        .catch(() => null);
+    }
+  }, [isOwner, isAdmin]);
 
   const getPeriodStart = (date: Date, type: "weekly" | "quarterly") =>
     type === "weekly"
@@ -90,6 +125,40 @@ export function TeamPlanner() {
   useEffect(() => {
     fetchTargets();
   }, [fetchTargets]);
+
+  const handleAddTarget = async () => {
+    if (!targetMemberId || !targetTitle.trim()) return;
+    setSavingTarget(true);
+    try {
+      const dateStr = format(periodStart, "yyyy-MM-dd");
+      const res = await fetch("/api/user-targets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: targetMemberId,
+          period_type: periodType,
+          period_start_date: dateStr,
+          title: targetTitle.trim(),
+          description: targetDescription.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error || "Failed to create target");
+      }
+
+      toast.success("Target created for team member");
+      setAddDialogOpen(false);
+      setTargetTitle("");
+      setTargetDescription("");
+      await fetchTargets();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create target");
+    } finally {
+      setSavingTarget(false);
+    }
+  };
 
   const handleNext = () =>
     setCurrentDate((prev) =>
@@ -163,6 +232,67 @@ export function TeamPlanner() {
           <Button variant="outline" size="icon" onClick={handleNext}>
             <ChevronRight className="h-4 w-4" />
           </Button>
+
+          {(isOwner || isAdmin) && (
+            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+              <DialogTrigger render={<Button size="sm" className="gap-1.5 ml-2" />}>
+                <Plus className="h-4 w-4" />
+                Add target for...
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add Target for Team Member</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label>Team Member</Label>
+                    <Select value={targetMemberId} onValueChange={(val) => setTargetMemberId(val || "")}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select member" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {members.map((m) => (
+                          <SelectItem key={m.user_id} value={m.user_id}>
+                            {m.full_name || m.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>Target Title</Label>
+                    <Input
+                      placeholder="e.g. Close 5 Enterprise Deals"
+                      value={targetTitle}
+                      onChange={(e) => setTargetTitle(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>Description (optional)</Label>
+                    <Textarea
+                      placeholder="Strategic context or milestone criteria..."
+                      value={targetDescription}
+                      onChange={(e) => setTargetDescription(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleAddTarget}
+                    disabled={savingTarget || !targetMemberId || !targetTitle.trim()}
+                  >
+                    {savingTarget ? "Saving..." : "Create Target"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 
@@ -315,6 +445,14 @@ export function TeamPlanner() {
                                 >
                                   {STATUS_LABELS[target.status]}
                                 </Badge>
+                                {target.creator?.full_name && target.created_by && target.created_by !== target.user_id && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-[10px] bg-muted/60 text-muted-foreground font-normal shrink-0"
+                                  >
+                                    Set by {target.creator.full_name}
+                                  </Badge>
+                                )}
                               </div>
                               {target.description && (
                                 <p className="text-xs text-muted-foreground mt-0.5 truncate">
