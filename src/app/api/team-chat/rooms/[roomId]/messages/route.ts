@@ -568,10 +568,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
-    const isAuthor = existing.sender_id === user.id
-    const isOwnerOrAdmin = profile?.account_role === 'owner' || profile?.account_role === 'admin'
-    if (!isAuthor && !isOwnerOrAdmin) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (existing.sender_id !== user.id) {
+      return NextResponse.json(
+        { error: 'Only the author can edit a message.' },
+        { status: 403 }
+      )
     }
 
     const { data: updated, error } = await supabaseAdmin()

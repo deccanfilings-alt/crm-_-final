@@ -124,7 +124,8 @@ export function TeamMessageBubble({
   }, [message.attachments])
 
   const isAuthor = currentUserId === message.sender_id
-  const canModify = isAuthor || userRole === "owner" || userRole === "admin"
+  const canEdit = isAuthor
+  const canDelete = isAuthor || userRole === "owner" || userRole === "admin"
 
   const hasBroadcastMention =
     /@channel/i.test(message.content || "") ||
@@ -606,8 +607,8 @@ export function TeamMessageBubble({
             <CheckSquare className="h-3.5 w-3.5" />
           </button>
 
-          {/* Edit Button (author or lead) */}
-          {canModify && !isEditing && (
+          {/* Edit Button (author only) */}
+          {canEdit && !isEditing && (
             <button
               type="button"
               onClick={() => setIsEditing(true)}
@@ -619,7 +620,7 @@ export function TeamMessageBubble({
           )}
 
           {/* Delete Button */}
-          {canModify && (
+          {canDelete && (
             <>
               {confirmDelete ? (
                 <div className="flex items-center gap-1 pl-0.5">
@@ -629,9 +630,9 @@ export function TeamMessageBubble({
                       onDeleteMessage?.(message.id)
                       setConfirmDelete(false)
                     }}
-                    className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors shadow-2xs"
+                    className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors shadow-2xs whitespace-nowrap"
                   >
-                    Delete
+                    {!isAuthor ? `Delete ${senderName}'s message?` : "Delete"}
                   </button>
                   <button
                     type="button"
