@@ -35,6 +35,7 @@ export interface ActionItem {
   cancel_reason?: string | null;
   conversation_id?: string | null;
   source?: string;
+  requires_review?: boolean;
   created_at: string;
   contact_id?: string | null;
   deal_id?: string | null;

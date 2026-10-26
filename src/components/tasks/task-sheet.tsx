@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, X, Trash2, User2, Search, UserCheck, Ban, History, Repeat } from "lucide-react";
+import { Plus, X, Trash2, User2, Search, UserCheck, Ban, History, Repeat, MessageSquare, Paperclip, Send, FileText, Download, Loader2, Clock, CheckCircle2 } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import type { ActionItem, ActionItemEvent } from "./types";
 import { formatDateTimeIST, getLateInfo } from "@/lib/dates";
@@ -99,10 +101,94 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
   const [repeatFrequency, setRepeatFrequency] = useState<string>("monthly");
   const [repeatLeadDays, setRepeatLeadDays] = useState<number>(3);
 
+  // Comments state (Task 11)
+  const [comments, setComments] = useState<any[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [commentFiles, setCommentFiles] = useState<any[]>([]);
+  const [postingComment, setPostingComment] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+
   const isCreator = Boolean(user && task && task.agent_id === user.id);
   const isAssignee = Boolean(user && task && task.assignee_id === user.id);
   const canManageAll = Boolean(isOwner || isAdmin || isCreator);
   const isAssigneeOnly = isAssignee && !canManageAll;
+
+  const loadComments = useCallback(async (taskId: string) => {
+    setLoadingComments(true);
+    try {
+      const res = await fetch(`/api/action-items/${taskId}/comments`);
+      if (res.ok) {
+        const data = await res.json();
+        setComments(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error("Failed to load comments:", e);
+    } finally {
+      setLoadingComments(false);
+    }
+  }, []);
+
+  const handlePostComment = async () => {
+    if (!task?.id || (!commentText.trim() && commentFiles.length === 0)) return;
+    setPostingComment(true);
+    try {
+      const res = await fetch(`/api/action-items/${task.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body: commentText.trim() || "Uploaded attachments",
+          attachments: commentFiles,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to post comment");
+      }
+
+      const newComment = await res.json();
+      setComments((prev) => [...prev, newComment]);
+      setCommentText("");
+      setCommentFiles([]);
+      toast.success("Comment posted");
+      loadEvents(task.id);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingAttachment(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+
+      const res = await fetch("/api/action-items/upload", {
+        method: "POST",
+        body: fd,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Upload failed");
+      }
+
+      const uploaded = await res.json();
+      setCommentFiles((prev) => [...prev, uploaded]);
+      toast.success(`Attached "${file.name}"`);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setUploadingAttachment(false);
+      e.target.value = "";
+    }
+  };
 
   const loadEvents = useCallback(async (taskId: string) => {
     setLoadingEvents(true);
@@ -153,10 +239,14 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
   useEffect(() => {
     if (open && task?.id) {
       loadEvents(task.id);
+      loadComments(task.id);
     } else {
       setEvents([]);
+      setComments([]);
+      setCommentText("");
+      setCommentFiles([]);
     }
-  }, [open, task?.id, loadEvents]);
+  }, [open, task?.id, loadEvents, loadComments]);
 
   useEffect(() => {
     if (!open) return;
@@ -257,6 +347,7 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
               ? new Date(`${formData.target_date}T${dueTime.trim()}:00+05:30`).toISOString()
               : null,
             subtasks: formData.subtasks,
+            requires_review: formData.requires_review,
             contact_id: formData.contact_id,
             deal_id: formData.deal_id,
             conversation_id: formData.conversation_id,
@@ -363,6 +454,51 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
         </SheetHeader>
 
         <div className="flex flex-col gap-4 py-4">
+          {/* Review Banner for Creator or Admin (Task 12) */}
+          {formData.status === "review" && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-amber-500 flex items-center gap-1.5">
+                  <Clock className="h-4 w-4" />
+                  Task Submitted for Review
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  Verification Required
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                The assignee completed their work and submitted it for sign-off.
+              </p>
+              {canManageAll && (
+                <div className="flex items-center gap-2 pt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                    onClick={() => {
+                      setFormData((prev) => ({ ...prev, status: "completed" }));
+                      toast.info("Status set to Completed. Save to confirm!");
+                    }}
+                  >
+                    <CheckCircle2 className="h-3 w-3" /> Approve & Complete
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs text-amber-500 border-amber-500/40 hover:bg-amber-500/10 gap-1"
+                    onClick={() => {
+                      setFormData((prev) => ({ ...prev, status: "in_progress" }));
+                      toast.info("Status returned to In Progress. Please add feedback in comments!");
+                    }}
+                  >
+                    Send Back for Changes
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-1.5">
             <Label className="px-1">Title</Label>
             <Input 
@@ -500,6 +636,19 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
                 </div>
               )}
             </div>
+          )}
+
+          {/* Requires Review toggle (Task 12) */}
+          {!isAssigneeOnly && (
+            <label className="flex items-center gap-2 px-1 cursor-pointer select-none">
+              <Checkbox
+                checked={Boolean(formData.requires_review)}
+                onCheckedChange={(c) => setFormData({ ...formData, requires_review: Boolean(c) })}
+              />
+              <span className="text-xs text-muted-foreground hover:text-foreground">
+                Requires creator/admin review before task is marked completed
+              </span>
+            </label>
           )}
 
           {(isOwner || isAdmin) && (
@@ -681,6 +830,156 @@ export function TaskSheet({ task, open, onOpenChange, onUpdate, onDelete }: Task
                 <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={handleCancelTask} disabled={saving || !cancelReason.trim()}>
                   Confirm Cancel
                 </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Comments & Attachments Section (Task 11) */}
+          {task.id && (
+            <div className="flex flex-col gap-3 pt-4 border-t border-border/60">
+              <div className="flex items-center justify-between px-1">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                  Comments & Files ({comments.length})
+                </Label>
+                {loadingComments && <span className="text-[11px] text-muted-foreground animate-pulse">Loading comments...</span>}
+              </div>
+
+              {/* Comments list */}
+              {comments.length === 0 && !loadingComments ? (
+                <div className="p-3 text-center rounded-xl border border-dashed bg-muted/20 text-xs text-muted-foreground">
+                  No comments yet. Share updates or attach files below.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 max-h-64 overflow-y-auto px-1">
+                  {comments.map((c) => (
+                    <div
+                      key={c.id}
+                      className="rounded-xl border border-border/60 bg-muted/30 p-3 text-xs space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-5 w-5">
+                            <AvatarFallback className="text-[9px]">
+                              {(c.author?.full_name || "U").substring(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="font-semibold text-foreground">
+                            {c.author?.full_name || "Team Member"}
+                          </span>
+                          {c.author?.account_role && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 capitalize text-muted-foreground">
+                              {c.author.account_role}
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatDateTimeIST(c.created_at)}
+                        </span>
+                      </div>
+
+                      <p className="text-foreground leading-relaxed whitespace-pre-wrap pl-7">
+                        {c.body}
+                      </p>
+
+                      {/* Attachments preview */}
+                      {Array.isArray(c.attachments) && c.attachments.length > 0 && (
+                        <div className="pl-7 flex flex-wrap gap-1.5 pt-1">
+                          {c.attachments.map((att: any, idx: number) => (
+                            <a
+                              key={idx}
+                              href={att.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border border-border/80 text-[11px] font-medium text-primary hover:underline hover:bg-muted/50 transition-colors"
+                              title="Click to view/download file"
+                            >
+                              <FileText className="h-3 w-3" />
+                              <span className="max-w-[150px] truncate">{att.name}</span>
+                              <Download className="h-2.5 w-2.5 text-muted-foreground" />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Comment composer */}
+              <div className="rounded-xl border border-border/70 bg-card p-2.5 space-y-2">
+                <Textarea
+                  placeholder="Write a comment, note, or update..."
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handlePostComment();
+                    }
+                  }}
+                  className="min-h-[60px] text-xs resize-none bg-background border-none p-1.5 focus-visible:ring-0 shadow-none"
+                />
+
+                {/* Staged attachments chips */}
+                {commentFiles.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 px-1">
+                    {commentFiles.map((f, i) => (
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[11px] text-primary"
+                      >
+                        <Paperclip className="h-3 w-3" />
+                        <span className="max-w-[120px] truncate">{f.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setCommentFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="hover:text-destructive"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-1 border-t border-border/40 px-1">
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground font-medium transition-colors">
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                        disabled={uploadingAttachment}
+                      />
+                      {uploadingAttachment ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Uploading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Paperclip className="h-3.5 w-3.5" />
+                          <span>Attach File</span>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs gap-1.5 px-3"
+                    disabled={postingComment || (!commentText.trim() && commentFiles.length === 0)}
+                    onClick={handlePostComment}
+                  >
+                    {postingComment ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Send className="h-3 w-3" />
+                    )}
+                    Comment
+                  </Button>
+                </div>
               </div>
             </div>
           )}

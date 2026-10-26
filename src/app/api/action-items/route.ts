@@ -94,7 +94,7 @@ export async function POST(req: Request) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('account_id, full_name')
+    .select('account_id, full_name, account_role')
     .eq('user_id', user.id)
     .single();
 
@@ -103,7 +103,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { title, description, priority, assignee_id, target_date, status, subtasks, contact_id, deal_id, target_id, estimated_hours } = await req.json();
+    const { title, description, priority, assignee_id, target_date, status, subtasks, contact_id, deal_id, target_id, estimated_hours, requires_review } = await req.json();
     if (!title) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
     }
@@ -126,7 +126,10 @@ export async function POST(req: Request) {
         contact_id: contact_id || null,
         deal_id: deal_id || null,
         target_id: target_id || null,
-        estimated_hours: estimated_hours || null
+        estimated_hours: estimated_hours || null,
+        requires_review: requires_review !== undefined
+          ? Boolean(requires_review)
+          : (['admin', 'owner'].includes(profile.account_role || '') && finalAssigneeId !== user.id)
       })
       .select()
       .single();

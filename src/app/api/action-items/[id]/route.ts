@@ -16,6 +16,8 @@ const ALLOWED_UPDATE_FIELDS = new Set([
   'conversation_id',
   'estimated_hours',
   'cancel_reason',
+  'requires_review',
+  'review_feedback',
 ]);
 
 const ASSIGNEE_ALLOWED_FIELDS = new Set([
@@ -23,6 +25,7 @@ const ASSIGNEE_ALLOWED_FIELDS = new Set([
   'description',
   'subtasks',
   'estimated_hours',
+  'review_feedback',
 ]);
 
 const FORBIDDEN_FIELDS = new Set([
@@ -162,7 +165,7 @@ export async function PATCH(
     // Load existing task to check permissions and roles
     const { data: existing, error: fetchErr } = await supabase
       .from('action_items')
-      .select('id, title, account_id, agent_id, assignee_id, status, target_date, due_at, agent:agent_id(full_name)')
+      .select('id, title, account_id, agent_id, assignee_id, status, target_date, due_at, requires_review, agent:agent_id(full_name)')
       .eq('id', id)
       .maybeSingle();
 
@@ -217,6 +220,67 @@ export async function PATCH(
       }
       updates.cancelled_at = new Date().toISOString();
     }
+
+    // Task 12: Review before completion workflow
+    if (updates.status === 'completed') {
+      if (existing.requires_review && !isCreator && !isAdmin) {
+        // Assignee completing a task that requires review -> reroute to 'review' status
+        updates.status = 'review';
+        updates.completed_at = null;
+
+        // Notify creator / admin that review is needed
+        try {
+          const recipientId = existing.agent_id || existing.account_id;
+          if (recipientId && recipientId !== user.id) {
+            await supabaseAdmin().from('notifications').insert({
+              user_id: recipientId,
+              account_id: existing.account_id,
+              type: 'task_review_needed',
+              title: 'Task submitted for review',
+              body: `"${existing.title}" is ready for your review.`,
+              link: `/action-items?task=${id}`,
+              read: false,
+              created_at: new Date().toISOString(),
+            });
+          }
+        } catch (e) {
+          console.error('Failed to notify review:', e);
+        }
+      } else {
+        // Approved/completed by admin or creator
+        updates.completed_at = new Date().toISOString();
+      }
+    } else if (updates.status && updates.status !== 'completed') {
+      updates.completed_at = null;
+    }
+
+    // If task was in review and admin/creator sends it back to in_progress
+    if (existing.status === 'review' && updates.status === 'in_progress') {
+      const feedback = updates.review_feedback || updates.description || 'Changes requested';
+      try {
+        await supabase.from('task_comments').insert({
+          action_item_id: id,
+          author_id: user.id,
+          body: `Review Feedback: ${feedback}`,
+        });
+
+        if (existing.assignee_id && existing.assignee_id !== user.id) {
+          await supabaseAdmin().from('notifications').insert({
+            user_id: existing.assignee_id,
+            account_id: existing.account_id,
+            type: 'task_review_rejected',
+            title: 'Task sent back for revision',
+            body: `"${existing.title}": ${feedback}`,
+            link: `/action-items?task=${id}`,
+            read: false,
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        console.error('Failed to send review rejection feedback:', e);
+      }
+    }
+    delete updates.review_feedback;
 
     // Reassigning: if assignee changes, notify the new assignee
     const isReassigned = updates.assignee_id && updates.assignee_id !== existing.assignee_id;

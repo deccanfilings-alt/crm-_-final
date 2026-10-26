@@ -256,4 +256,44 @@ describe('PATCH & DELETE /api/action-items/[id] - Task 2 Permissions', () => {
       })
     );
   });
+  it('when assignee marks task with requires_review: true as completed, it reroutes to review status', async () => {
+    mockUser.id = 'user-assignee-1';
+    mockProfile.account_role = 'agent';
+    mockExistingTask.requires_review = true;
+
+    const req = new Request('http://localhost/api/action-items/task-123', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    });
+
+    const res = await PATCH(req, { params: Promise.resolve({ id: 'task-123' }) });
+    expect(res.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'review',
+      })
+    );
+  });
+
+  it('when creator or admin completes task with requires_review, it completes and sets completed_at', async () => {
+    mockUser.id = 'user-creator-9';
+    mockProfile.account_role = 'admin';
+    mockExistingTask.requires_review = true;
+
+    const req = new Request('http://localhost/api/action-items/task-123', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'completed' }),
+    });
+
+    const res = await PATCH(req, { params: Promise.resolve({ id: 'task-123' }) });
+    expect(res.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'completed',
+        completed_at: expect.any(String),
+      })
+    );
+  });
 });
