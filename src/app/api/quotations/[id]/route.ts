@@ -99,6 +99,7 @@ export async function PATCH(
       tax_rate,
       notes,
       terms,
+      custom_message,
       items,
       company_name,
       company_logo_url,
@@ -125,6 +126,7 @@ export async function PATCH(
     if (client_gstin !== undefined) updates.client_gstin = client_gstin?.trim() || null;
     if (valid_until !== undefined) updates.valid_until = valid_until || null;
     if (notes !== undefined) updates.notes = notes || null;
+    if (custom_message !== undefined) updates.custom_message = custom_message?.trim() || null;
     if (terms !== undefined) updates.terms = terms || null;
     if (company_name !== undefined) updates.company_name = company_name?.trim() || null;
     if (company_logo_url !== undefined) updates.company_logo_url = company_logo_url?.trim() || null;

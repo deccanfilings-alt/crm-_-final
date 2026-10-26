@@ -827,6 +827,7 @@ export interface Quotation {
   signature_url?: string | null;
   stamp_url?: string | null;
   
+  custom_message?: string | null;
   notes?: string | null;
   terms?: string | null;
   pdf_url?: string | null;

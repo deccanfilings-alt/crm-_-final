@@ -111,6 +111,7 @@ export async function POST(request: Request) {
       tax_rate,
       notes,
       terms,
+      custom_message,
       items,
       company_name,
       company_logo_url,
@@ -196,6 +197,7 @@ export async function POST(request: Request) {
       signature_url: signature_url?.trim() || settings.signature_url,
       stamp_url: stamp_url?.trim() || settings.stamp_url,
       notes: notes || null,
+      custom_message: custom_message?.trim() || null,
       terms: terms !== undefined ? terms : settings.default_terms,
       public_token: publicToken,
     };

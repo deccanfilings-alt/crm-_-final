@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS quotations (
   -- Meta & Notes
   notes TEXT,
   terms TEXT,
+  custom_message TEXT,
   pdf_url TEXT,
   public_token TEXT UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(16), 'hex'),
   

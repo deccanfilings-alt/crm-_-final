@@ -30,6 +30,13 @@ export async function POST(
 
     const accountId = profile.account_id;
 
+    let requestBody: any = {};
+    try {
+      requestBody = await request.json();
+    } catch {
+      // Body is optional
+    }
+
     // 1. Fetch quotation
     const { data: quote, error: quoteError } = await supabase
       .from('quotations')
@@ -75,8 +82,8 @@ export async function POST(
       ? new Date(quote.valid_until).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
       : '15 Days from issue';
 
-    const messageText = [
-      `📄 *Quotation from ${settings.company_name}*`,
+        const defaultMessageText = [
+      `📄 *Quotation from ${quote.company_name || settings.company_name}*`,
       '',
       `Dear *${quote.client_name}*,`,
       '',
@@ -90,6 +97,13 @@ export async function POST(
       '',
       'Please review and reply here if you have any questions!',
     ].join('\n');
+
+    let messageText = requestBody?.custom_message?.trim() || quote.custom_message?.trim() || defaultMessageText;
+    
+    // Ensure the public URL is always in the message if the user didn't include it
+    if (!messageText.includes(publicUrl)) {
+      messageText += `\n\n🔗 *View Quotation Online:*\n${publicUrl}`;
+    }
 
     // 5. Send via WhatsApp Meta Cloud API if configured
     const { data: config } = await supabase

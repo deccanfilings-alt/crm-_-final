@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Plus,
@@ -18,8 +18,13 @@ import {
   PenTool,
   ChevronDown,
   ChevronUp,
+  Phone,
+  Mail,
+  MessageSquare,
+  Sparkles,
+  RotateCcw,
+  ExternalLink,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Dialog,
   DialogContent,
@@ -63,15 +68,16 @@ export function QuotationBuilderModal({
   quotationToEdit,
   onSuccess,
 }: QuotationBuilderModalProps) {
-  const supabase = createClient();
-
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
 
-  // Contact Picker
+  // Dynamic Contact Search across entire database (5,500+ contacts)
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactSearch, setContactSearch] = useState("");
+  const [searchingContacts, setSearchingContacts] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [showContactDropdown, setShowContactDropdown] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // Form Fields - Quotation Meta
   const [title, setTitle] = useState("");
@@ -93,7 +99,12 @@ export function QuotationBuilderModal({
   const [notes, setNotes] = useState("");
   const [terms, setTerms] = useState("");
 
-  // Dynamic Issuing Entity & Signatures/Stamps (Fully customizable per quote)
+  // Dynamic WhatsApp Message / Cover Note
+  const [customMessage, setCustomMessage] = useState("");
+  const [isMessageEdited, setIsMessageEdited] = useState(false);
+  const [activeMessageTab, setActiveMessageTab] = useState<"edit" | "preview">("edit");
+
+  // Dynamic Issuing Entity & Signatures/Stamps (Collapsed by default for clean UX)
   const [showEntityDetails, setShowEntityDetails] = useState(false);
   const [companyName, setCompanyName] = useState("Deccan Filings");
   const [companyLogoUrl, setCompanyLogoUrl] = useState("");
@@ -124,19 +135,89 @@ export function QuotationBuilderModal({
     },
   ]);
 
-  // Load Contacts for Search
+  // Live Totals Calculation
+  const totals = useMemo(() => {
+    return calculateQuotationTotals({
+      items,
+      discountType,
+      discountValue,
+      taxType,
+      taxRate,
+    });
+  }, [items, discountType, discountValue, taxType, taxRate]);
+
+  // Real-time Database Contact Search (searches all 5,500+ records)
+  const searchContacts = useCallback(async (query: string) => {
+    try {
+      setSearchingContacts(true);
+      const res = await fetch(`/api/contacts?search=${encodeURIComponent(query)}&limit=25`);
+      if (res.ok) {
+        const data = await res.json();
+        setContacts(data.contacts || []);
+      }
+    } catch (err) {
+      console.error("Failed to search contacts:", err);
+    } finally {
+      setSearchingContacts(false);
+    }
+  }, []);
+
+  // Debounced search on input change
   useEffect(() => {
     if (!open) return;
-    async function loadContacts() {
-      const { data } = await supabase
-        .from("contacts")
-        .select("*")
-        .order("name", { ascending: true })
-        .limit(50);
-      if (data) setContacts(data as Contact[]);
+    const timer = setTimeout(() => {
+      searchContacts(contactSearch);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [contactSearch, searchContacts, open]);
+
+  // Click outside listener for contact dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target as Node)
+      ) {
+        setShowContactDropdown(false);
+      }
     }
-    loadContacts();
-  }, [open, supabase]);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Generate smart default WhatsApp message
+  const generateDefaultMessage = useCallback(() => {
+    const validStr = validUntil
+      ? new Date(validUntil).toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      : "15 Days from issue";
+
+    return [
+      `📄 *Quotation from ${companyName || "Deccan Filings"}*`,
+      "",
+      `Dear *${clientName || "Valued Client"}*,`,
+      "",
+      `We have prepared your quotation for *${title || "Professional Services"}*.`,
+      "",
+      `💰 *Total Amount:* ₹${totals.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+      `🗓 *Valid Until:* ${validStr}`,
+      "",
+      "🔗 *View & Approve Online:*",
+      "[Secure quotation link attached automatically]",
+      "",
+      "Please review and reply here if you have any questions!",
+    ].join("\n");
+  }, [companyName, clientName, title, totals.totalAmount, validUntil]);
+
+  // Update default message when quotation basics change (unless user manually customized it)
+  useEffect(() => {
+    if (!isMessageEdited) {
+      setCustomMessage(generateDefaultMessage());
+    }
+  }, [generateDefaultMessage, isMessageEdited]);
 
   // File upload handler
   const handleUploadFile = async (
@@ -144,7 +225,7 @@ export function QuotationBuilderModal({
     file: File
   ) => {
     if (!file.type.startsWith("image/")) {
-      toast.error("Please upload a valid image file (PNG, JPG, WEBP, SVG).");
+      toast.error("Please upload an image file (PNG, JPG, WEBP).");
       return;
     }
 
@@ -200,7 +281,12 @@ export function QuotationBuilderModal({
       setSignatureUrl(quotationToEdit.signature_url || "");
       setStampUrl(quotationToEdit.stamp_url || "");
 
-      // If quotation has custom company/signature, auto-open the section
+      if (quotationToEdit.custom_message) {
+        setCustomMessage(quotationToEdit.custom_message);
+        setIsMessageEdited(true);
+      }
+
+      // If quotation has custom company/signature, auto-open customization
       if (
         (quotationToEdit.company_name && quotationToEdit.company_name !== "Deccan Filings") ||
         quotationToEdit.signature_url ||
@@ -230,13 +316,15 @@ export function QuotationBuilderModal({
         setClientPhone(contact.phone || "");
         setClientEmail(contact.email || "");
         setClientCompany(contact.company || "");
-        setClientAddress("");
+        setClientAddress((contact as any)?.address || "");
+        setClientGstin((contact as any)?.gstin || "");
       } else {
         setClientName("");
         setClientPhone("");
         setClientEmail("");
         setClientCompany("");
         setClientAddress("");
+        setClientGstin("");
       }
 
       setTitle("");
@@ -250,6 +338,8 @@ export function QuotationBuilderModal({
       setTaxType("gst");
       setTaxRate(18.0);
       setNotes("");
+      setIsMessageEdited(false);
+      setShowEntityDetails(false);
 
       // Fetch default settings
       fetch("/api/quotations/settings")
@@ -288,12 +378,19 @@ export function QuotationBuilderModal({
   // Handle Contact Pick
   const handleSelectContact = (c: Contact) => {
     setSelectedContact(c);
-    setClientName(c.name || c.phone || "");
+    setClientName(c.name || c.phone || "Client");
     setClientPhone(c.phone || "");
     setClientEmail(c.email || "");
     setClientCompany(c.company || "");
-    setClientAddress("");
+    setClientAddress((c as any)?.address || "");
+    setClientGstin((c as any)?.gstin || "");
+    setShowContactDropdown(false);
     setContactSearch("");
+    toast.success(`Linked contact: ${c.name || c.phone}`);
+  };
+
+  const handleClearSelectedContact = () => {
+    setSelectedContact(null);
   };
 
   // Line Items Manipulation
@@ -325,17 +422,6 @@ export function QuotationBuilderModal({
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Live Totals Calculation
-  const totals = useMemo(() => {
-    return calculateQuotationTotals({
-      items,
-      discountType,
-      discountValue,
-      taxType,
-      taxRate,
-    });
-  }, [items, discountType, discountValue, taxType, taxRate]);
-
   // Submit Handler
   const handleSaveQuotation = async (sendAfterSave = false) => {
     if (!title.trim()) {
@@ -344,6 +430,10 @@ export function QuotationBuilderModal({
     }
     if (!clientName.trim()) {
       toast.error("Please enter the client name.");
+      return;
+    }
+    if (sendAfterSave && !clientPhone.trim()) {
+      toast.error("A WhatsApp phone number is required to send on WhatsApp.");
       return;
     }
     if (items.some((it) => !it.title.trim())) {
@@ -374,6 +464,7 @@ export function QuotationBuilderModal({
         tax_rate: taxRate,
         notes: notes.trim() || null,
         terms: terms.trim() || null,
+        custom_message: customMessage.trim() || null,
         // Dynamic Issuing Entity & Signatures
         company_name: companyName.trim() || null,
         company_logo_url: companyLogoUrl.trim() || null,
@@ -393,7 +484,7 @@ export function QuotationBuilderModal({
         })),
       };
 
-      const url = quotationToEdit ? "/api/quotations/" + quotationToEdit.id : "/api/quotations";
+      const url = quotationToEdit ? `/api/quotations/${quotationToEdit.id}` : "/api/quotations";
       const method = quotationToEdit ? "PATCH" : "POST";
 
       const res = await fetch(url, {
@@ -411,8 +502,10 @@ export function QuotationBuilderModal({
 
       if (sendAfterSave && savedQuote?.id) {
         toast.info("Sending quotation via WhatsApp...");
-        const sendRes = await fetch("/api/quotations/" + savedQuote.id + "/send-whatsapp", {
+        const sendRes = await fetch(`/api/quotations/${savedQuote.id}/send-whatsapp`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ custom_message: customMessage.trim() }),
         });
         const sendData = await sendRes.json();
         if (!sendRes.ok) {
@@ -435,113 +528,125 @@ export function QuotationBuilderModal({
     }
   };
 
-  const filteredContacts = useMemo(() => {
-    if (!contactSearch.trim()) return [];
-    const q = contactSearch.toLowerCase();
-    return contacts.filter(
-      (c) =>
-        c.name?.toLowerCase().includes(q) ||
-        c.phone?.toLowerCase().includes(q) ||
-        c.company?.toLowerCase().includes(q)
-    );
-  }, [contacts, contactSearch]);
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-4xl p-0 overflow-hidden flex flex-col">
-        <DialogHeader className="p-6 pb-4 border-b">
-          <div className="flex items-center gap-2">
-            <Receipt className="h-5 w-5 text-primary" />
-            <DialogTitle className="text-xl">
-              {quotationToEdit
-                ? "Edit Quotation " + quotationToEdit.quote_number
-                : "Create New Quotation"}
-            </DialogTitle>
+      <DialogContent className="max-h-[94vh] w-[95vw] sm:max-w-4xl p-0 overflow-hidden flex flex-col border border-border shadow-2xl">
+        {/* Header */}
+        <DialogHeader className="p-4 sm:p-6 pb-3 border-b bg-muted/20 shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                <Receipt className="h-4 w-4" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg sm:text-xl font-bold">
+                  {quotationToEdit
+                    ? `Edit Quotation ${quotationToEdit.quote_number}`
+                    : "Create New Quotation"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Prepare a formal, itemized quotation with GST, client details, and WhatsApp cover message.
+                </DialogDescription>
+              </div>
+            </div>
+            {quotationToEdit && (
+              <span className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary font-semibold">
+                {quotationToEdit.quote_number}
+              </span>
+            )}
           </div>
-          <DialogDescription>
-            Prepare a formal, itemized quotation with GST, discounts, and payment terms for WhatsApp delivery.
-          </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 p-6">
+        {/* Scrollable Content */}
+        <ScrollArea className="flex-1 p-4 sm:p-6 overflow-y-auto">
           <div className="space-y-6">
-            {/* Top Row: Title & Dates */}
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="sm:col-span-2 space-y-1">
-                <Label htmlFor="quote_title">Quotation Subject / Title *</Label>
+            {/* Top Row: Title & Dates (Spacious & Responsive) */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4">
+              <div className="md:col-span-6 space-y-1.5">
+                <Label htmlFor="quote_title" className="text-xs font-semibold">
+                  Quotation Subject / Service Title *
+                </Label>
                 <Input
                   id="quote_title"
                   placeholder="e.g. Private Limited Company Registration & GST Filing"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   required
+                  className="h-9 text-xs sm:text-sm"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label htmlFor="issue_date">Issue Date</Label>
+              <div className="grid grid-cols-2 md:col-span-6 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="issue_date" className="text-xs font-medium">Issue Date</Label>
                   <Input
                     id="issue_date"
                     type="date"
                     value={issueDate}
                     onChange={(e) => setIssueDate(e.target.value)}
+                    className="h-9 text-xs"
                   />
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="valid_until">Valid Until</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="valid_until" className="text-xs font-medium">Valid Until</Label>
                   <Input
                     id="valid_until"
                     type="date"
                     value={validUntil}
                     onChange={(e) => setValidUntil(e.target.value)}
+                    className="h-9 text-xs"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Dynamic Issuing Entity & Signatures (Collapsible / Customizable) */}
-            <div className="rounded-lg border bg-card p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-primary" />
-                  <span className="font-semibold text-xs text-foreground">
-                    Issuing Entity & Official Stamp / Signature
-                  </span>
-                  <span className="text-[11px] font-normal text-muted-foreground">
-                    ({companyName || "Default Entity"})
-                  </span>
+            {/* Issuing Entity & Signatures (Collapsible Banner - Clean UX) */}
+            <div className="rounded-xl border bg-card overflow-hidden">
+              <div className="flex items-center justify-between p-3 sm:p-4 bg-muted/20">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="h-7 w-7 rounded-md bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                    <Building2 className="h-4 w-4" />
+                  </div>
+                  <div className="truncate">
+                    <div className="text-xs font-semibold text-foreground flex items-center gap-2">
+                      <span>Issuing Entity:</span>
+                      <span className="text-primary font-bold">{companyName || "Deccan Filings"}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      Default billing company, digital signatures & official seal
+                    </p>
+                  </div>
                 </div>
+
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                  className="h-8 text-xs gap-1.5 shrink-0"
                   onClick={() => setShowEntityDetails(!showEntityDetails)}
                 >
                   {showEntityDetails ? (
                     <>
-                      Hide Details <ChevronUp className="h-3.5 w-3.5" />
+                      Close Details <ChevronUp className="h-3.5 w-3.5" />
                     </>
                   ) : (
                     <>
-                      Customize Entity & Signatures <ChevronDown className="h-3.5 w-3.5" />
+                      Customize Entity & Stamp <ChevronDown className="h-3.5 w-3.5" />
                     </>
                   )}
                 </Button>
               </div>
 
               {showEntityDetails && (
-                <div className="pt-2 border-t space-y-4">
-                  <p className="text-[11px] text-muted-foreground">
-                    You can override the issuing business name, address, GSTIN, digital signature, and official seal for this quotation (useful when serving different client entities or sister companies).
+                <div className="p-4 border-t space-y-4 bg-muted/5">
+                  <p className="text-xs text-muted-foreground">
+                    Serving another client or sister entity? You can override company name, GSTIN, digital signatures, and official seals for this quotation:
                   </p>
 
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs" htmlFor="company_name">Issuing Company Name</Label>
+                      <Label className="text-xs">Issuing Company Name</Label>
                       <Input
-                        id="company_name"
                         value={companyName}
                         onChange={(e) => setCompanyName(e.target.value)}
                         placeholder="Deccan Filings"
@@ -550,9 +655,8 @@ export function QuotationBuilderModal({
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs" htmlFor="company_phone">Company Phone</Label>
+                      <Label className="text-xs">Company Phone</Label>
                       <Input
-                        id="company_phone"
                         value={companyPhone}
                         onChange={(e) => setCompanyPhone(e.target.value)}
                         placeholder="+91 99999 99999"
@@ -561,9 +665,8 @@ export function QuotationBuilderModal({
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs" htmlFor="company_email">Billing Email</Label>
+                      <Label className="text-xs">Billing Email</Label>
                       <Input
-                        id="company_email"
                         type="email"
                         value={companyEmail}
                         onChange={(e) => setCompanyEmail(e.target.value)}
@@ -573,9 +676,8 @@ export function QuotationBuilderModal({
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs" htmlFor="company_gstin">Issuing GSTIN</Label>
+                      <Label className="text-xs">Issuing GSTIN</Label>
                       <Input
-                        id="company_gstin"
                         value={companyGstin}
                         onChange={(e) => setCompanyGstin(e.target.value)}
                         placeholder="36AAAAA0000A1Z5"
@@ -584,9 +686,8 @@ export function QuotationBuilderModal({
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs" htmlFor="company_pan">Issuing PAN</Label>
+                      <Label className="text-xs">Issuing PAN</Label>
                       <Input
-                        id="company_pan"
                         value={companyPan}
                         onChange={(e) => setCompanyPan(e.target.value)}
                         placeholder="AAAAA0000A"
@@ -595,9 +696,8 @@ export function QuotationBuilderModal({
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs" htmlFor="company_address">Address / City</Label>
+                      <Label className="text-xs">Address / City</Label>
                       <Input
-                        id="company_address"
                         value={companyAddress}
                         onChange={(e) => setCompanyAddress(e.target.value)}
                         placeholder="Hyderabad, Telangana"
@@ -606,12 +706,12 @@ export function QuotationBuilderModal({
                     </div>
                   </div>
 
-                  {/* Signatures & Stamps Dynamic Uploaders */}
-                  <div className="grid gap-3 sm:grid-cols-2 pt-2 border-t">
-                    {/* Authorized Signature */}
-                    <div className="p-3 border rounded-md bg-muted/20 space-y-2">
+                  {/* Dynamic Signature & Stamp Uploaders */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                    {/* Authorized Signature Card */}
+                    <div className="p-3.5 border rounded-lg bg-card space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <Label className="text-xs font-medium flex items-center gap-1.5">
+                        <Label className="text-xs font-semibold flex items-center gap-1.5">
                           <PenTool className="h-3.5 w-3.5 text-primary" />
                           Authorized Signature
                         </Label>
@@ -627,7 +727,7 @@ export function QuotationBuilderModal({
                         />
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="secondary"
                           size="sm"
                           disabled={uploadingSig}
                           onClick={() => sigInputRef.current?.click()}
@@ -638,7 +738,7 @@ export function QuotationBuilderModal({
                           ) : (
                             <Upload className="h-3 w-3" />
                           )}
-                          Upload Signature
+                          Upload Photo
                         </Button>
                       </div>
 
@@ -649,8 +749,8 @@ export function QuotationBuilderModal({
                         onChange={(e) => setSignatureUrl(e.target.value)}
                       />
 
-                      {signatureUrl && (
-                        <div className="relative mt-2 p-2 border rounded bg-background flex items-center justify-center">
+                      {signatureUrl ? (
+                        <div className="relative mt-2 p-2 border rounded-md bg-muted/20 flex items-center justify-center">
                           <img
                             src={signatureUrl}
                             alt="Signature Preview"
@@ -666,13 +766,17 @@ export function QuotationBuilderModal({
                             <X className="h-3 w-3" />
                           </Button>
                         </div>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground italic">
+                          No signature uploaded. A standard signature underline will be displayed.
+                        </p>
                       )}
                     </div>
 
-                    {/* Official Stamp / Seal */}
-                    <div className="p-3 border rounded-md bg-muted/20 space-y-2">
+                    {/* Official Stamp / Seal Card */}
+                    <div className="p-3.5 border rounded-lg bg-card space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <Label className="text-xs font-medium flex items-center gap-1.5">
+                        <Label className="text-xs font-semibold flex items-center gap-1.5">
                           <Stamp className="h-3.5 w-3.5 text-primary" />
                           Official Seal / Stamp
                         </Label>
@@ -688,7 +792,7 @@ export function QuotationBuilderModal({
                         />
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="secondary"
                           size="sm"
                           disabled={uploadingStamp}
                           onClick={() => stampInputRef.current?.click()}
@@ -699,7 +803,7 @@ export function QuotationBuilderModal({
                           ) : (
                             <Upload className="h-3 w-3" />
                           )}
-                          Upload Stamp
+                          Upload Seal
                         </Button>
                       </div>
 
@@ -710,8 +814,8 @@ export function QuotationBuilderModal({
                         onChange={(e) => setStampUrl(e.target.value)}
                       />
 
-                      {stampUrl && (
-                        <div className="relative mt-2 p-2 border rounded bg-background flex items-center justify-center">
+                      {stampUrl ? (
+                        <div className="relative mt-2 p-2 border rounded-md bg-muted/20 flex items-center justify-center">
                           <img
                             src={stampUrl}
                             alt="Stamp Preview"
@@ -727,6 +831,10 @@ export function QuotationBuilderModal({
                             <X className="h-3 w-3" />
                           </Button>
                         </div>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground italic">
+                          Optional. Upload official seal to imprint on the quotation.
+                        </p>
                       )}
                     </div>
                   </div>
@@ -734,45 +842,108 @@ export function QuotationBuilderModal({
               )}
             </div>
 
-            {/* Client / Recipient Details */}
-            <div className="rounded-lg border bg-card p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 font-medium text-sm">
+            {/* Client & Mobile Search (Searches 5,500+ contacts with real-time dropdown) */}
+            <div className="rounded-xl border bg-card p-4 sm:p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+                <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-primary" />
-                  Client Information
+                  <span className="font-semibold text-sm">Client / Recipient Information</span>
                 </div>
 
-                {!initialContact && (
-                  <div className="relative w-64">
+                {/* Database Search Input with Auto-complete Dropdown */}
+                <div className="relative w-full sm:w-80" ref={searchContainerRef}>
+                  <div className="relative">
                     <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
-                      className="h-8 pl-8 text-xs"
-                      placeholder="Search existing contact..."
+                      className="h-8 pl-8 pr-8 text-xs"
+                      placeholder="Search 5,500+ contacts by mobile or name..."
                       value={contactSearch}
-                      onChange={(e) => setContactSearch(e.target.value)}
+                      onFocus={() => setShowContactDropdown(true)}
+                      onChange={(e) => {
+                        setContactSearch(e.target.value);
+                        setShowContactDropdown(true);
+                      }}
                     />
-                    {filteredContacts.length > 0 && (
-                      <div className="absolute top-9 left-0 right-0 z-50 rounded-md border bg-popover shadow-md max-h-48 overflow-y-auto">
-                        {filteredContacts.map((c) => (
+                    {searchingContacts ? (
+                      <Loader2 className="absolute right-2.5 top-2.5 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    ) : contactSearch ? (
+                      <button
+                        type="button"
+                        onClick={() => setContactSearch("")}
+                        className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {/* Dropdown Results */}
+                  {showContactDropdown && (
+                    <div className="absolute top-9 left-0 right-0 z-50 rounded-lg border bg-popover text-popover-foreground shadow-xl max-h-56 overflow-y-auto divide-y">
+                      {contacts.length > 0 ? (
+                        contacts.map((c) => (
                           <div
                             key={c.id}
-                            className="p-2 text-xs hover:bg-muted cursor-pointer flex justify-between items-center"
+                            className="p-2.5 text-xs hover:bg-muted cursor-pointer transition-colors flex items-center justify-between gap-2"
                             onClick={() => handleSelectContact(c)}
                           >
-                            <div>
-                              <div className="font-semibold">{c.name || "Unnamed"}</div>
-                              <div className="text-muted-foreground">{c.phone}</div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-foreground truncate">
+                                {c.name || "Customer"}
+                              </div>
+                              <div className="text-primary font-mono text-[11px] flex items-center gap-1 mt-0.5">
+                                <Phone className="h-3 w-3 shrink-0" />
+                                {c.phone || "No phone"}
+                              </div>
+                              {c.company && (
+                                <div className="text-[10px] text-muted-foreground truncate">
+                                  {c.company}
+                                </div>
+                              )}
                             </div>
-                            <Check className="h-3 w-3 text-primary opacity-0 hover:opacity-100" />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-[11px] shrink-0 text-primary"
+                            >
+                              Select
+                            </Button>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                        ))
+                      ) : (
+                        <div className="p-3 text-xs text-muted-foreground text-center">
+                          {searchingContacts ? "Searching database..." : "No contacts found. Enter client details below manually."}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              {/* Linked Contact Indicator */}
+              {selectedContact && (
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-medium">
+                  <div className="flex items-center gap-2 truncate">
+                    <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                    <span className="truncate">
+                      Linked Contact: <strong>{selectedContact.name || "Customer"}</strong> ({selectedContact.phone})
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-muted-foreground hover:text-destructive"
+                    onClick={handleClearSelectedContact}
+                  >
+                    Unlink
+                  </Button>
+                </div>
+              )}
+
+              {/* Client Form Fields (Responsive Grid) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs" htmlFor="client_name">Client / Signatory Name *</Label>
                   <Input
@@ -781,16 +952,20 @@ export function QuotationBuilderModal({
                     onChange={(e) => setClientName(e.target.value)}
                     placeholder="Srikanth Rao"
                     required
+                    className="h-9 text-xs sm:text-sm"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs" htmlFor="client_phone">WhatsApp Phone</Label>
+                  <Label className="text-xs font-semibold text-primary" htmlFor="client_phone">
+                    WhatsApp Mobile Number *
+                  </Label>
                   <Input
                     id="client_phone"
                     value={clientPhone}
                     onChange={(e) => setClientPhone(e.target.value)}
                     placeholder="+91 98765 43210"
+                    className="h-9 text-xs sm:text-sm font-mono"
                   />
                 </div>
 
@@ -802,6 +977,7 @@ export function QuotationBuilderModal({
                     value={clientEmail}
                     onChange={(e) => setClientEmail(e.target.value)}
                     placeholder="client@example.com"
+                    className="h-9 text-xs"
                   />
                 </div>
 
@@ -812,6 +988,7 @@ export function QuotationBuilderModal({
                     value={clientCompany}
                     onChange={(e) => setClientCompany(e.target.value)}
                     placeholder="Srikanth Ventures LLP"
+                    className="h-9 text-xs"
                   />
                 </div>
 
@@ -822,6 +999,7 @@ export function QuotationBuilderModal({
                     value={clientGstin}
                     onChange={(e) => setClientGstin(e.target.value)}
                     placeholder="36AAAAA0000A1Z5"
+                    className="h-9 text-xs"
                   />
                 </div>
 
@@ -832,6 +1010,7 @@ export function QuotationBuilderModal({
                     value={clientAddress}
                     onChange={(e) => setClientAddress(e.target.value)}
                     placeholder="Banjara Hills, Hyderabad"
+                    className="h-9 text-xs"
                   />
                 </div>
               </div>
@@ -840,101 +1019,106 @@ export function QuotationBuilderModal({
             {/* Line Items Table */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">Quotation Line Items</Label>
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-bold">Quotation Line Items</Label>
+                  <span className="text-xs text-muted-foreground">({items.length} items)</span>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-8 gap-1.5 text-xs"
+                  className="h-8 gap-1.5 text-xs font-medium"
                   onClick={handleAddItem}
                 >
-                  <Plus className="h-3.5 w-3.5" />
+                  <Plus className="h-3.5 w-3.5 text-primary" />
                   Add Line Item
                 </Button>
               </div>
 
-              <div className="border rounded-md overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted text-muted-foreground border-b font-medium">
-                    <tr>
-                      <th className="p-2.5 text-left w-6/12">Item Title & Description</th>
-                      <th className="p-2.5 text-center w-2/12">Qty</th>
-                      <th className="p-2.5 text-right w-2/12">Unit Rate (₹)</th>
-                      <th className="p-2.5 text-right w-2/12">Total (₹)</th>
-                      <th className="p-2.5 text-center w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {items.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-muted/30">
-                        <td className="p-2 space-y-1">
-                          <Input
-                            className="h-8 text-xs font-medium"
-                            placeholder="Service title e.g. Professional Consultancy & Incorporation"
-                            value={item.title}
-                            onChange={(e) => handleItemChange(idx, "title", e.target.value)}
-                          />
-                          <Input
-                            className="h-7 text-[11px] text-muted-foreground"
-                            placeholder="Optional description / scope details"
-                            value={item.description}
-                            onChange={(e) => handleItemChange(idx, "description", e.target.value)}
-                          />
-                        </td>
-                        <td className="p-2 align-top">
-                          <Input
-                            type="number"
-                            min="1"
-                            step="1"
-                            className="h-8 text-center text-xs"
-                            value={item.quantity}
-                            onChange={(e) =>
-                              handleItemChange(idx, "quantity", parseFloat(e.target.value) || 0)
-                            }
-                          />
-                        </td>
-                        <td className="p-2 align-top">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            className="h-8 text-right text-xs"
-                            value={item.unit_price}
-                            onChange={(e) =>
-                              handleItemChange(idx, "unit_price", parseFloat(e.target.value) || 0)
-                            }
-                          />
-                        </td>
-                        <td className="p-2.5 align-top text-right font-semibold text-foreground">
-                          ₹{item.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="p-2 align-top text-center">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            onClick={() => handleRemoveItem(idx)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
+              <div className="border rounded-xl overflow-hidden bg-card shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs min-w-[550px]">
+                    <thead className="bg-muted/40 text-muted-foreground border-b font-semibold">
+                      <tr>
+                        <th className="p-3 text-left w-6/12">Item Title & Scope</th>
+                        <th className="p-3 text-center w-2/12">Qty</th>
+                        <th className="p-3 text-right w-2/12">Unit Rate (₹)</th>
+                        <th className="p-3 text-right w-2/12">Total (₹)</th>
+                        <th className="p-3 text-center w-10"></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y">
+                      {items.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-muted/20 transition-colors">
+                          <td className="p-2.5 space-y-1.5">
+                            <Input
+                              className="h-8 text-xs font-medium"
+                              placeholder="Service title e.g. Company Incorporation"
+                              value={item.title}
+                              onChange={(e) => handleItemChange(idx, "title", e.target.value)}
+                            />
+                            <Input
+                              className="h-7 text-[11px] text-muted-foreground"
+                              placeholder="Scope details (e.g. drafting MOA, DIN generation, ROC approvals)"
+                              value={item.description}
+                              onChange={(e) => handleItemChange(idx, "description", e.target.value)}
+                            />
+                          </td>
+                          <td className="p-2.5 align-top">
+                            <Input
+                              type="number"
+                              min="1"
+                              step="1"
+                              className="h-8 text-center text-xs"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                handleItemChange(idx, "quantity", parseFloat(e.target.value) || 0)
+                              }
+                            />
+                          </td>
+                          <td className="p-2.5 align-top">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              className="h-8 text-right text-xs"
+                              value={item.unit_price}
+                              onChange={(e) =>
+                                handleItemChange(idx, "unit_price", parseFloat(e.target.value) || 0)
+                              }
+                            />
+                          </td>
+                          <td className="p-3 align-top text-right font-bold text-foreground">
+                            ₹{item.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2.5 align-top text-center">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleRemoveItem(idx)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
             {/* Calculations & Totals Summary Panel */}
-            <div className="grid gap-6 sm:grid-cols-2 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
               {/* Discount & Tax Controls */}
-              <div className="space-y-4 rounded-lg border p-4 bg-muted/10">
-                <div className="font-medium text-xs text-muted-foreground uppercase tracking-wider">
+              <div className="space-y-4 rounded-xl border p-4 bg-muted/10">
+                <div className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">
                   Discounts & Taxes
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Discount Type</Label>
                     <select
@@ -991,11 +1175,11 @@ export function QuotationBuilderModal({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Internal Notes for Customer</Label>
+                  <Label className="text-xs">Internal Notes / Deliverable Timeline</Label>
                   <Textarea
                     className="text-xs"
                     rows={2}
-                    placeholder="e.g. Turnaround time: 5-7 working days after document receipt."
+                    placeholder="e.g. Turnaround time: 5-7 working days after KYC receipt."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                   />
@@ -1003,14 +1187,14 @@ export function QuotationBuilderModal({
               </div>
 
               {/* Financial Calculation Breakdown Card */}
-              <div className="rounded-lg border p-4 bg-muted/20 flex flex-col justify-between">
-                <div className="space-y-2.5 text-xs">
-                  <div className="font-semibold text-sm border-b pb-2 flex justify-between">
-                    <span>Summary</span>
+              <div className="rounded-xl border p-4 bg-muted/20 flex flex-col justify-between shadow-sm">
+                <div className="space-y-2 text-xs">
+                  <div className="font-bold text-sm border-b pb-2 flex justify-between">
+                    <span>Financial Summary</span>
                     <span className="text-muted-foreground font-normal">INR (₹)</span>
                   </div>
 
-                  <div className="flex justify-between text-muted-foreground">
+                  <div className="flex justify-between text-muted-foreground pt-1">
                     <span>Subtotal:</span>
                     <span className="font-medium text-foreground">
                       ₹{totals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
@@ -1018,7 +1202,7 @@ export function QuotationBuilderModal({
                   </div>
 
                   {totals.discountAmount > 0 && (
-                    <div className="flex justify-between text-emerald-600 font-medium">
+                    <div className="flex justify-between text-emerald-600 font-semibold">
                       <span>Discount:</span>
                       <span>-₹{totals.discountAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                     </div>
@@ -1045,8 +1229,8 @@ export function QuotationBuilderModal({
                   )}
                 </div>
 
-                <div className="pt-4 border-t mt-3 flex items-baseline justify-between">
-                  <span className="text-base font-bold text-foreground">Grand Total:</span>
+                <div className="pt-3 border-t mt-3 flex items-baseline justify-between">
+                  <span className="text-sm font-bold text-foreground">Grand Total:</span>
                   <span className="text-2xl font-black text-primary tracking-tight">
                     ₹{totals.totalAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                   </span>
@@ -1054,9 +1238,101 @@ export function QuotationBuilderModal({
               </div>
             </div>
 
+            {/* WhatsApp Accompanying Message & Preview (The Message Space) */}
+            <div className="rounded-xl border bg-card p-4 sm:p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2.5">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-emerald-600" />
+                  <div>
+                    <span className="font-bold text-xs text-foreground">
+                      WhatsApp Accompanying Message & Cover Note
+                    </span>
+                    <p className="text-[11px] text-muted-foreground">
+                      This is the exact message text delivered to the client on WhatsApp alongside the quote link.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <div className="inline-flex rounded-md border p-0.5 bg-muted/30 text-xs">
+                    <button
+                      type="button"
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                        activeMessageTab === "edit"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      onClick={() => setActiveMessageTab("edit")}
+                    >
+                      Edit Message
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                        activeMessageTab === "preview"
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      onClick={() => setActiveMessageTab("preview")}
+                    >
+                      WhatsApp Preview
+                    </button>
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-[11px] text-muted-foreground hover:text-foreground gap-1"
+                    title="Reset to generated default message"
+                    onClick={() => {
+                      setIsMessageEdited(false);
+                      setCustomMessage(generateDefaultMessage());
+                      toast.info("Reset to default message template");
+                    }}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Reset
+                  </Button>
+                </div>
+              </div>
+
+              {activeMessageTab === "edit" ? (
+                <div className="space-y-1.5">
+                  <Textarea
+                    className="text-xs font-mono leading-relaxed"
+                    rows={6}
+                    value={customMessage}
+                    onChange={(e) => {
+                      setCustomMessage(e.target.value);
+                      setIsMessageEdited(true);
+                    }}
+                    placeholder="Enter accompanying message for WhatsApp delivery..."
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>Supports WhatsApp markdown (*bold*, _italic_, ~strike~).</span>
+                    <span>{customMessage.length} characters</span>
+                  </div>
+                </div>
+              ) : (
+                /* Realistic WhatsApp Chat Bubble Preview */
+                <div className="p-4 rounded-lg bg-[#efeae2] dark:bg-[#0b141a] border flex justify-center">
+                  <div className="max-w-md w-full bg-[#ffffff] dark:bg-[#202c33] p-3.5 rounded-lg shadow-sm text-xs space-y-2 border-l-4 border-emerald-500">
+                    <div className="whitespace-pre-wrap font-sans text-gray-800 dark:text-gray-100 leading-relaxed text-[12px]">
+                      {customMessage || "No message content."}
+                    </div>
+                    <div className="flex items-center justify-end gap-1 text-[10px] text-gray-400 dark:text-gray-400 pt-1">
+                      <span>Just now</span>
+                      <span className="text-sky-500 font-bold">✓✓</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Terms and Conditions Accordion/Block */}
             <div className="space-y-1.5">
-              <Label className="text-xs">Quotation Terms & Conditions</Label>
+              <Label className="text-xs font-semibold">Quotation Terms & Conditions</Label>
               <Textarea
                 className="text-xs font-mono"
                 rows={3}
@@ -1067,22 +1343,25 @@ export function QuotationBuilderModal({
           </div>
         </ScrollArea>
 
-        <DialogFooter className="p-4 border-t bg-muted/10 gap-2 sm:gap-0">
+        {/* Footer */}
+        <DialogFooter className="p-4 border-t bg-muted/20 gap-2 sm:gap-0 shrink-0">
           <Button
             type="button"
             variant="outline"
             disabled={saving || sending}
             onClick={() => onOpenChange(false)}
+            className="text-xs"
           >
             Cancel
           </Button>
 
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="secondary"
               disabled={saving || sending}
               onClick={() => handleSaveQuotation(false)}
+              className="text-xs"
             >
               {saving ? (
                 <>
@@ -1098,7 +1377,7 @@ export function QuotationBuilderModal({
               type="button"
               disabled={saving || sending}
               onClick={() => handleSaveQuotation(true)}
-              className="gap-1.5"
+              className="gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               {sending ? (
                 <>
