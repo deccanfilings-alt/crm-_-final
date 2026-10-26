@@ -135,3 +135,45 @@ export async function deleteAccountMedia(
   const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Build the team chat object path under account-<accountId>/room-<roomId>/...
+ */
+export function buildTeamChatPath(
+  accountId: string,
+  roomId: string,
+  fileName: string,
+  now: number = Date.now(),
+): string {
+  const hasExt = /\.[^.]+$/.test(fileName);
+  const ext = hasExt ? fileName.split(".").pop()!.toLowerCase() : "bin";
+  const safeBase =
+    fileName
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .slice(0, 40) || "file";
+
+  return `account-${accountId}/room-${roomId}/${now}-${safeBase}.${ext}`;
+}
+
+/**
+ * Upload a private team chat file to the 'team-chat-files' private bucket.
+ */
+export async function uploadTeamChatFile(
+  accountId: string,
+  roomId: string,
+  file: File,
+): Promise<{ path: string }> {
+  const supabase = createClient();
+  const path = buildTeamChatPath(accountId, roomId, file.name);
+
+  const { error: upErr } = await supabase.storage.from("team-chat-files").upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || undefined,
+  });
+
+  if (upErr) throw new Error(upErr.message);
+
+  return { path };
+}

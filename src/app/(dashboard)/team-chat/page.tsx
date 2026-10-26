@@ -1110,6 +1110,8 @@ export default function TeamChatPage() {
 
             {/* Message Composer */}
             <TeamMessageComposer
+              roomId={activeRoomId || ""}
+              accountId={profile?.account_id || ""}
               onSendMessage={handleSendMessage}
               onTyping={handleSendTyping}
               replyTo={

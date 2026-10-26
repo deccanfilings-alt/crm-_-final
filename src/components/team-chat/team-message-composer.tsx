@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Send, AtSign, Paperclip, X, Image as ImageIcon, Users, UserCheck, Loader2, Megaphone, CircleDot, CornerUpLeft, Mic, Square } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import { uploadAccountMedia } from "@/lib/storage/upload-media"
+import { uploadTeamChatFile } from "@/lib/storage/upload-media"
 import { toast } from "sonner"
 import type { TeamChatAttachment } from "@/types"
 
@@ -62,6 +62,8 @@ const SPECIAL_MENTIONS: SpecialMention[] = [
 ]
 
 interface TeamMessageComposerProps {
+  roomId: string
+  accountId: string
   onSendMessage: (
     content: string,
     taggedContactIds: string[],
@@ -81,6 +83,8 @@ interface TeamMessageComposerProps {
 }
 
 export function TeamMessageComposer({
+  roomId,
+  accountId,
   onSendMessage,
   disabled = false,
   placeholder = "Message #channel... Type @ to mention, or attach GIFs/media",
@@ -153,12 +157,15 @@ export function TeamMessageComposer({
   const handleFileUpload = async (file: File) => {
     setUploading(true)
     try {
-      const { publicUrl } = await uploadAccountMedia("chat-media", file)
+      const { path } = await uploadTeamChatFile(accountId, roomId, file)
+      const localPreviewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
       const newAttachment: TeamChatAttachment = {
-        url: publicUrl,
+        path,
+        url: localPreviewUrl,
         name: file.name,
         size: file.size,
         type: file.type || "application/octet-stream",
+        mime_type: file.type || "application/octet-stream",
       }
       setAttachments((prev) => [...prev, newAttachment])
       toast.success(`Attached ${file.name}`)
@@ -385,7 +392,13 @@ export function TeamMessageComposer({
         content.trim() || (hasAttachments ? "[Attachment]" : ""),
         taggedIds,
         mentionedIds,
-        attachments,
+        attachments.map((att) => ({
+          path: att.path,
+          name: att.name,
+          size: att.size,
+          type: att.type || att.mime_type,
+          mime_type: att.mime_type || att.type,
+        })),
         replyTo?.id || null
       )
       onCancelReply?.()
@@ -439,17 +452,19 @@ export function TeamMessageComposer({
           {attachments.map((att, i) => {
             const isImageOrGif =
               att.type?.startsWith("image/") ||
-              att.url.endsWith(".gif") ||
-              att.url.endsWith(".png") ||
-              att.url.endsWith(".jpg") ||
-              att.url.endsWith(".webp")
+              att.mime_type?.startsWith("image/") ||
+              Boolean(att.url && (att.url.endsWith(".gif") || att.url.endsWith(".png") || att.url.endsWith(".jpg") || att.url.endsWith(".webp"))) ||
+              att.name.endsWith(".gif") ||
+              att.name.endsWith(".png") ||
+              att.name.endsWith(".jpg") ||
+              att.name.endsWith(".webp")
 
             return (
               <div
                 key={i}
                 className="relative group flex items-center gap-2 rounded-lg border border-border bg-card p-1.5 pr-3 shadow-xs"
               >
-                {isImageOrGif ? (
+                {isImageOrGif && att.url ? (
                   <img
                     src={att.url}
                     alt={att.name}

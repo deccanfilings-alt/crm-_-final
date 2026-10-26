@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMediaPath, MEDIA_MAX_BYTES_BY_KIND } from "./upload-media";
+import { buildMediaPath, buildTeamChatPath, MEDIA_MAX_BYTES_BY_KIND } from "./upload-media";
 
 const ACCOUNT = "11111111-2222-3333-4444-555555555555";
 
@@ -42,5 +42,16 @@ describe("MEDIA_MAX_BYTES_BY_KIND", () => {
     expect(MEDIA_MAX_BYTES_BY_KIND.video).toBe(16 * 1024 * 1024);
     expect(MEDIA_MAX_BYTES_BY_KIND.audio).toBe(16 * 1024 * 1024);
     expect(MEDIA_MAX_BYTES_BY_KIND.document).toBe(16 * 1024 * 1024);
+  });
+});
+
+describe("buildTeamChatPath", () => {
+  const ROOM = "22222222-3333-4444-5555-666666666666";
+
+  it("namespaces under account-<id>/room-<id>", () => {
+    const path = buildTeamChatPath(ACCOUNT, ROOM, "contract.pdf", 1700000000000);
+    expect(path).toBe(`account-${ACCOUNT}/room-${ROOM}/1700000000000-contract.pdf`);
+    expect(path.split("/")[0]).toBe(`account-${ACCOUNT}`);
+    expect(path.split("/")[1]).toBe(`room-${ROOM}`);
   });
 });

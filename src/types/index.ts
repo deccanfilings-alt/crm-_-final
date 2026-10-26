@@ -683,10 +683,12 @@ export interface TeamRoom {
 }
 
 export interface TeamChatAttachment {
-  url: string;
+  url?: string;
+  path?: string;
   name: string;
   size?: number;
   type?: string;
+  mime_type?: string;
 }
 
 export interface TeamMessageReaction {

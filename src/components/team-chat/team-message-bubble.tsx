@@ -23,6 +23,7 @@ import {
   CheckSquare,
 } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { splitLinks } from "@/lib/team-chat/linkify"
 import { buildMentionRegex } from "@/lib/team-chat/mentions"
@@ -41,6 +42,48 @@ interface TeamMessageBubbleProps {
   onEditMessage?: (messageId: string, newContent: string) => Promise<void>
   onJumpToMessage?: (messageId: string) => void
   onConvertToTask?: (message: TeamMessage) => void
+}
+
+
+// Module-level signed URL cache
+const signedUrlCache = new Map<string, { url: string; expiresAt: number }>()
+
+async function getSignedUrls(paths: string[]): Promise<Record<string, string>> {
+  const now = Date.now()
+  const result: Record<string, string> = {}
+  const missingPaths: string[] = []
+
+  for (const path of paths) {
+    const cached = signedUrlCache.get(path)
+    if (cached && cached.expiresAt > now + 300_000) {
+      result[path] = cached.url
+    } else {
+      missingPaths.push(path)
+    }
+  }
+
+  if (missingPaths.length > 0) {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase.storage
+        .from("team-chat-files")
+        .createSignedUrls(missingPaths, 3600)
+
+      if (!error && data) {
+        const expiresAt = now + 3600 * 1000
+        data.forEach((item) => {
+          if (item.signedUrl && item.path) {
+            signedUrlCache.set(item.path, { url: item.signedUrl, expiresAt })
+            result[item.path] = item.signedUrl
+          }
+        })
+      }
+    } catch (err) {
+      console.error("[team-chat] Failed to fetch signed URLs:", err)
+    }
+  }
+
+  return result
 }
 
 export function TeamMessageBubble({
@@ -62,6 +105,23 @@ export function TeamMessageBubble({
   const [editContent, setEditContent] = useState(message.content || "")
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
+
+  React.useEffect(() => {
+    const paths = (message.attachments || [])
+      .map((a: TeamChatAttachment) => a.path)
+      .filter((p): p is string => Boolean(p))
+
+    if (paths.length > 0) {
+      let active = true
+      getSignedUrls(paths).then((urls) => {
+        if (active) setSignedUrls(urls)
+      })
+      return () => {
+        active = false
+      }
+    }
+  }, [message.attachments])
 
   const isAuthor = currentUserId === message.sender_id
   const canModify = isAuthor || userRole === "owner" || userRole === "admin"
@@ -230,42 +290,52 @@ export function TeamMessageBubble({
     })
   }
 
-  // Render multimedia attachments (GIFs, images, videos, audio, documents)
+  // Render multimedia attachments using signed links or legacy public URLs
   const renderAttachments = () => {
     if (!message.attachments || message.attachments.length === 0) return null
 
     return (
       <div className={cn("flex flex-wrap gap-2 mt-2", isAuthor ? "justify-end" : "justify-start")}>
         {message.attachments.map((att: TeamChatAttachment, i: number) => {
+          const fileUrl = (att.path && signedUrls[att.path]) || att.url || ""
+          const fileType = (att.mime_type || att.type || "").toLowerCase()
+          const fileName = (att.name || "").toLowerCase()
+
           const isImageOrGif =
-            att.type?.startsWith("image/") ||
-            att.url.toLowerCase().endsWith(".gif") ||
-            att.url.toLowerCase().endsWith(".png") ||
-            att.url.toLowerCase().endsWith(".jpg") ||
-            att.url.toLowerCase().endsWith(".jpeg") ||
-            att.url.toLowerCase().endsWith(".webp")
+            fileType.startsWith("image/") ||
+            fileName.endsWith(".gif") ||
+            fileName.endsWith(".png") ||
+            fileName.endsWith(".jpg") ||
+            fileName.endsWith(".jpeg") ||
+            fileName.endsWith(".webp") ||
+            fileUrl.toLowerCase().includes(".gif") ||
+            fileUrl.toLowerCase().includes(".png") ||
+            fileUrl.toLowerCase().includes(".jpg") ||
+            fileUrl.toLowerCase().includes(".webp")
 
           const isVideo =
-            att.type?.startsWith("video/") ||
-            att.url.toLowerCase().endsWith(".mp4") ||
-            att.url.toLowerCase().endsWith(".webm")
+            fileType.startsWith("video/") ||
+            fileName.endsWith(".mp4") ||
+            fileName.endsWith(".webm") ||
+            fileUrl.toLowerCase().includes(".mp4") ||
+            fileUrl.toLowerCase().includes(".webm")
 
           const isAudio =
-            att.type?.startsWith("audio/") ||
-            att.url.toLowerCase().endsWith(".mp3") ||
-            att.url.toLowerCase().endsWith(".ogg") ||
-            att.url.toLowerCase().endsWith(".wav") ||
-            att.name.includes("voice_note")
+            fileType.startsWith("audio/") ||
+            fileName.endsWith(".mp3") ||
+            fileName.endsWith(".ogg") ||
+            fileName.endsWith(".wav") ||
+            fileName.includes("voice_note")
 
           if (isImageOrGif) {
             return (
               <div
                 key={i}
                 className="relative group/att rounded-xl overflow-hidden border border-border shadow-xs max-w-sm cursor-pointer"
-                onClick={() => setLightboxImage(att.url)}
+                onClick={() => setLightboxImage(fileUrl)}
               >
                 <img
-                  src={att.url}
+                  src={fileUrl}
                   alt={att.name}
                   className="max-h-72 w-auto object-contain transition-transform group-hover/att:scale-[1.02]"
                   loading="lazy"
@@ -280,7 +350,7 @@ export function TeamMessageBubble({
           if (isVideo) {
             return (
               <div key={i} className="rounded-xl overflow-hidden border border-border shadow-xs max-w-sm">
-                <video src={att.url} controls className="max-h-72 w-full rounded-xl" />
+                <video src={fileUrl} controls className="max-h-72 w-full rounded-xl" />
               </div>
             )
           }
@@ -296,7 +366,7 @@ export function TeamMessageBubble({
                     {att.size ? `${(att.size / 1024).toFixed(1)} KB` : ""}
                   </span>
                 </div>
-                <audio src={att.url} controls className="w-full h-8" />
+                <audio src={fileUrl} controls className="w-full h-8" />
               </div>
             )
           }
@@ -305,7 +375,7 @@ export function TeamMessageBubble({
           return (
             <a
               key={i}
-              href={att.url}
+              href={fileUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 text-xs hover:bg-muted/80 transition-colors shadow-xs"

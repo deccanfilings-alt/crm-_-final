@@ -130,3 +130,36 @@ AS $$
   GROUP BY rd.room_id, rd.last_read_at;
 $$;
 GRANT EXECUTE ON FUNCTION public.team_chat_unread_counts() TO authenticated;
+
+-- ============================================================
+-- §4. Private bucket for team chat files
+-- Path: account-<account_id>/room-<room_id>/<timestamp>-<name>.<ext>
+-- ============================================================
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('team-chat-files', 'team-chat-files', false, 16777216)
+ON CONFLICT (id) DO UPDATE SET public = false, file_size_limit = EXCLUDED.file_size_limit;
+
+CREATE OR REPLACE FUNCTION public.team_chat_room_from_path(p_name TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  seg TEXT := split_part(p_name, '/', 2);
+BEGIN
+  IF seg !~ '^room-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+    RETURN NULL;
+  END IF;
+  RETURN substring(seg FROM 6)::UUID;
+END;
+$$;
+
+DROP POLICY IF EXISTS "team chat files: read" ON storage.objects;
+CREATE POLICY "team chat files: read" ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'team-chat-files'
+         AND public.can_view_team_room(public.team_chat_room_from_path(name)));
+
+DROP POLICY IF EXISTS "team chat files: upload" ON storage.objects;
+CREATE POLICY "team chat files: upload" ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'team-chat-files'
+              AND public.can_view_team_room(public.team_chat_room_from_path(name)));
