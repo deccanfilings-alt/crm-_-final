@@ -1,5 +1,6 @@
-import { renderTemplateBody } from '@/lib/whatsapp/render-template-body';
 "use client";
+
+import { renderTemplateBody } from '@/lib/whatsapp/render-template-body';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
