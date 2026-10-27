@@ -53,6 +53,24 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+    const isOwner = profile.account_role === 'owner';
+
+    // Fetch existing settings to verify if bank details are being changed
+    const currentSettings = await getQuotationSettings(supabase, profile.account_id);
+
+    const isChangingBankDetails =
+      (body.bank_name !== undefined && (body.bank_name?.trim() || '') !== (currentSettings.bank_name || '')) ||
+      (body.bank_account_no !== undefined && (body.bank_account_no?.trim() || '') !== (currentSettings.bank_account_no || '')) ||
+      (body.bank_ifsc !== undefined && (body.bank_ifsc?.trim() || '') !== (currentSettings.bank_ifsc || '')) ||
+      (body.bank_beneficiary_name !== undefined && (body.bank_beneficiary_name?.trim() || '') !== (currentSettings.bank_beneficiary_name || '')) ||
+      (body.upi_id !== undefined && (body.upi_id?.trim() || '') !== (currentSettings.upi_id || '')) ||
+      (body.upi_qr_url !== undefined && (body.upi_qr_url?.trim() || '') !== (currentSettings.upi_qr_url || ''));
+
+    if (isChangingBankDetails && !isOwner) {
+      return NextResponse.json({
+        error: 'Security Notice: Only the Account Owner / CEO is authorized to modify company bank account and UPI details.',
+      }, { status: 403 });
+    }
 
     const payload = {
       account_id: profile.account_id,
@@ -64,12 +82,13 @@ export async function POST(request: Request) {
       company_website: body.company_website?.trim() || null,
       gstin: body.gstin?.trim() || null,
       pan: body.pan?.trim() || null,
-      bank_name: body.bank_name?.trim() || null,
-      bank_account_no: body.bank_account_no?.trim() || null,
-      bank_ifsc: body.bank_ifsc?.trim() || null,
-      bank_beneficiary_name: body.bank_beneficiary_name?.trim() || null,
-      upi_id: body.upi_id?.trim() || null,
-      upi_qr_url: body.upi_qr_url?.trim() || null,
+      // Bank details can strictly only be modified by the owner / CEO
+      bank_name: isOwner ? (body.bank_name?.trim() || null) : currentSettings.bank_name,
+      bank_account_no: isOwner ? (body.bank_account_no?.trim() || null) : currentSettings.bank_account_no,
+      bank_ifsc: isOwner ? (body.bank_ifsc?.trim() || null) : currentSettings.bank_ifsc,
+      bank_beneficiary_name: isOwner ? (body.bank_beneficiary_name?.trim() || null) : currentSettings.bank_beneficiary_name,
+      upi_id: isOwner ? (body.upi_id?.trim() || null) : currentSettings.upi_id,
+      upi_qr_url: isOwner ? (body.upi_qr_url?.trim() || null) : currentSettings.upi_qr_url,
       signature_url: body.signature_url !== undefined ? (body.signature_url?.trim() || null) : null,
       stamp_url: body.stamp_url !== undefined ? (body.stamp_url?.trim() || null) : null,
       default_terms: body.default_terms !== undefined ? body.default_terms : DEFAULT_QUOTATION_SETTINGS.default_terms,

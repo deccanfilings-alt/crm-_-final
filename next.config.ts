@@ -123,7 +123,7 @@ const nextConfig: NextConfig = {
           {
             key: "Cache-Control",
             value:
-              "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+              "private, no-cache, no-store, max-age=0, must-revalidate",
           },
         ],
       },

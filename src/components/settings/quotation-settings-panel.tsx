@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Stamp,
   PenTool,
+  Lock,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import type { QuotationSettings } from "@/types";
 export function QuotationSettingsPanel() {
   const { accountRole } = useAuth();
   const canEdit = accountRole === "owner" || accountRole === "admin";
+  const canEditBank = accountRole === "owner";
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -519,13 +521,19 @@ export function QuotationSettingsPanel() {
             <CardDescription>
               Payment instructions shown at the bottom of the quotation and on the public client web view.
             </CardDescription>
+            {!canEditBank && (
+              <div className="mt-2.5 flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-400 border border-amber-500/20">
+                <Lock className="h-4 w-4 shrink-0" />
+                <span>Protected: Only the Account Owner (CEO) can modify official bank account and UPI details.</span>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="bank_name">Bank Name</Label>
               <Input
                 id="bank_name"
-                disabled={!canEdit}
+                disabled={!canEditBank}
                 value={formData.bank_name || ""}
                 onChange={(e) => handleChange("bank_name", e.target.value)}
                 placeholder="HDFC Bank"
@@ -536,7 +544,7 @@ export function QuotationSettingsPanel() {
               <Label htmlFor="bank_beneficiary_name">Beneficiary / Account Name</Label>
               <Input
                 id="bank_beneficiary_name"
-                disabled={!canEdit}
+                disabled={!canEditBank}
                 value={formData.bank_beneficiary_name || ""}
                 onChange={(e) => handleChange("bank_beneficiary_name", e.target.value)}
                 placeholder="Deccan Filings Private Limited"
@@ -547,7 +555,7 @@ export function QuotationSettingsPanel() {
               <Label htmlFor="bank_account_no">Account Number</Label>
               <Input
                 id="bank_account_no"
-                disabled={!canEdit}
+                disabled={!canEditBank}
                 value={formData.bank_account_no || ""}
                 onChange={(e) => handleChange("bank_account_no", e.target.value)}
                 placeholder="50200012345678"
@@ -558,7 +566,7 @@ export function QuotationSettingsPanel() {
               <Label htmlFor="bank_ifsc">IFSC Code</Label>
               <Input
                 id="bank_ifsc"
-                disabled={!canEdit}
+                disabled={!canEditBank}
                 value={formData.bank_ifsc || ""}
                 onChange={(e) => handleChange("bank_ifsc", e.target.value)}
                 placeholder="HDFC0001234"
@@ -569,7 +577,7 @@ export function QuotationSettingsPanel() {
               <Label htmlFor="upi_id">UPI ID / VPA</Label>
               <Input
                 id="upi_id"
-                disabled={!canEdit}
+                disabled={!canEditBank}
                 value={formData.upi_id || ""}
                 onChange={(e) => handleChange("upi_id", e.target.value)}
                 placeholder="deccanfilings@hdfcbank"
