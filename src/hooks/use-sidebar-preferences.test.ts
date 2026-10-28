@@ -9,16 +9,16 @@ import {
 
 describe("sidebar-preferences pure logic", () => {
   it("reorders items correctly using arrayMove behavior", () => {
-    const initial = ["/inbox", "/team-chat", "/contacts", "/quotations"];
-    // Move /quotations to position of /inbox (index 0)
-    const reordered = reorderNavHrefs(initial, "/quotations", "/inbox");
-    expect(reordered).toEqual(["/quotations", "/inbox", "/team-chat", "/contacts"]);
+    const initial = ["/team-chat", "/contacts", "/pipelines", "/quotations"];
+    // Move /quotations to position of /team-chat (index 0)
+    const reordered = reorderNavHrefs(initial, "/quotations", "/team-chat");
+    expect(reordered).toEqual(["/quotations", "/team-chat", "/contacts", "/pipelines"]);
   });
 
   it("leaves order unchanged when moving item to itself or if item not found", () => {
-    const initial = ["/inbox", "/team-chat"];
-    expect(reorderNavHrefs(initial, "/inbox", "/inbox")).toEqual(initial);
-    expect(reorderNavHrefs(initial, "/nonexistent", "/inbox")).toEqual(initial);
+    const initial = ["/team-chat", "/contacts"];
+    expect(reorderNavHrefs(initial, "/team-chat", "/team-chat")).toEqual(initial);
+    expect(reorderNavHrefs(initial, "/nonexistent", "/team-chat")).toEqual(initial);
   });
 
   it("toggles pinned state on and off", () => {
@@ -33,19 +33,19 @@ describe("sidebar-preferences pure logic", () => {
   });
 
   it("moves pinned item to the front of order", () => {
-    const initial = ["/inbox", "/team-chat", "/quotations", "/contacts"];
+    const initial = ["/team-chat", "/contacts", "/quotations", "/pipelines"];
     const updated = applySidebarPinOrder(initial, "/quotations");
-    expect(updated).toEqual(["/quotations", "/inbox", "/team-chat", "/contacts"]);
+    expect(updated).toEqual(["/quotations", "/team-chat", "/contacts", "/pipelines"]);
   });
 
   it("merges stored order with default hrefs to handle new routes safely", () => {
-    const saved = ["/quotations", "/inbox"];
+    const saved = ["/quotations", "/team-chat"];
     const merged = mergeNavHrefsWithDefaults(saved);
     expect(merged[0]).toBe("/quotations");
-    expect(merged[1]).toBe("/inbox");
+    expect(merged[1]).toBe("/team-chat");
     expect(merged.length).toBe(DEFAULT_CUSTOMIZABLE_HREFS.length);
     // Contains all other default items
-    expect(merged).toContain("/team-chat");
     expect(merged).toContain("/contacts");
+    expect(merged).toContain("/pipelines");
   });
 });

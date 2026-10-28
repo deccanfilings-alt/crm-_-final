@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import {
   Bot,
   BrainCircuit,
+  Building2,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -97,7 +98,6 @@ const topFixedItem: NavItem = {
 };
 
 const customizableNavItems: NavItem[] = [
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
   { href: "/team-chat", label: "Team Chat", icon: UsersRound },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
@@ -239,6 +239,46 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
     </Link>
   );
 
+  const isInboxActive = pathname === "/inbox" || pathname.startsWith("/inbox/");
+  const inboxLinkContent = (
+    <Link
+      href="/inbox"
+      className={cn(
+        "group relative flex items-center rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 lg:py-2 overflow-hidden",
+        isCollapsed ? "justify-center lg:px-0" : "gap-3",
+        isInboxActive
+          ? "bg-primary/12 text-primary font-semibold shadow-xs before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r-full before:bg-primary before:shadow-[0_0_8px_var(--color-primary)]"
+          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+      )}
+    >
+      <div className="relative flex shrink-0 items-center justify-center transition-transform duration-150 group-hover:scale-105">
+        <MessageSquare
+          className={cn(
+            "h-4 w-4 transition-colors",
+            isInboxActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+          )}
+        />
+        {totalUnread > 0 && !isInboxActive && (
+          <span
+            aria-label={`${totalUnread} unread conversation${totalUnread === 1 ? "" : "s"}`}
+            className="absolute -right-1.5 -top-1.5 flex h-2 w-2"
+          >
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+          </span>
+        )}
+      </div>
+      <span className={cn("flex-1 truncate tracking-tight", isCollapsed && "lg:hidden")}>
+        Inbox
+      </span>
+      {totalUnread > 0 && !isCollapsed && (
+        <span className="ml-auto inline-flex items-center justify-center rounded-full bg-primary/20 px-2 py-0.5 text-xs font-semibold text-primary">
+          {totalUnread > 99 ? "99+" : totalUnread}
+        </span>
+      )}
+    </Link>
+  );
+
   return (
     <>
       {/* Backdrop for mobile */}
@@ -271,7 +311,7 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
         >
           <Link href="/dashboard" className="flex items-center gap-2.5 group">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-xs shadow-primary/30 transition-transform duration-200 group-hover:scale-105">
-              <MessageSquare className="h-4 w-4" />
+              <Building2 className="h-4 w-4" />
             </div>
             <span
               className={cn(
@@ -295,7 +335,7 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">
           <TooltipProvider delay={0}>
-            {/* Top Fixed Anchor: Dashboard */}
+            {/* Top Fixed Anchors: Dashboard & Inbox */}
             <ul className="flex flex-col gap-1 mb-2">
               <li>
                 {isCollapsed ? (
@@ -305,6 +345,25 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
                   </Tooltip>
                 ) : (
                   dashboardLinkContent
+                )}
+              </li>
+              <li>
+                {isCollapsed ? (
+                  <Tooltip>
+                    <TooltipTrigger className="w-full">{inboxLinkContent}</TooltipTrigger>
+                    <TooltipContent side="right">
+                      <div className="flex items-center gap-1.5">
+                        <span>Inbox</span>
+                        {totalUnread > 0 && (
+                          <span className="rounded-full bg-primary/20 px-1.5 text-[10px] font-semibold text-primary">
+                            {totalUnread}
+                          </span>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  inboxLinkContent
                 )}
               </li>
             </ul>
