@@ -782,6 +782,10 @@ export interface QuotationSettings {
   default_terms?: string | null;
   quote_prefix: string;
   next_quote_number: number;
+  proforma_prefix?: string;
+  next_proforma_number?: number;
+  tax_invoice_prefix?: string;
+  next_tax_invoice_number?: number;
   default_currency: string;
   default_tax_rate: number;
   created_at: string;
@@ -799,6 +803,96 @@ export interface QuotationItem {
   tax_rate?: number;
   total: number;
   created_at?: string;
+}
+
+
+export type InvoiceType = 'proforma' | 'tax_invoice';
+export type InvoiceStatus = 'draft' | 'unpaid' | 'partially_paid' | 'paid' | 'cancelled';
+export type PaymentMethod = 'upi' | 'bank_transfer' | 'card' | 'cash' | 'cheque' | 'other';
+
+export interface InvoiceItem {
+  id: string;
+  invoice_id: string;
+  position: number;
+  title: string;
+  description?: string | null;
+  quantity: number;
+  unit_price: number;
+  tax_rate?: number;
+  total: number;
+  created_at?: string;
+}
+
+export interface Invoice {
+  id: string;
+  account_id: string;
+  quotation_id?: string | null;
+  invoice_type: InvoiceType;
+  invoice_number: string;
+  title: string;
+  contact_id?: string | null;
+  deal_id?: string | null;
+  conversation_id?: string | null;
+  created_by_user_id?: string | null;
+  status: InvoiceStatus;
+  issue_date: string;
+  due_date?: string | null;
+  currency: string;
+  
+  subtotal: number;
+  discount_type: QuotationDiscountType;
+  discount_value: number;
+  discount_amount: number;
+  tax_type: QuotationTaxType;
+  tax_rate: number;
+  tax_amount: number;
+  total_amount: number;
+  
+  paid_amount: number;
+  balance_amount: number;
+  payment_method?: PaymentMethod | null;
+  payment_reference?: string | null;
+  payment_notes?: string | null;
+  paid_at?: string | null;
+  
+  client_name: string;
+  client_phone?: string | null;
+  client_email?: string | null;
+  client_company?: string | null;
+  client_address?: string | null;
+  client_gstin?: string | null;
+  
+  company_name?: string | null;
+  company_logo_url?: string | null;
+  company_address?: string | null;
+  company_phone?: string | null;
+  company_email?: string | null;
+  company_website?: string | null;
+  gstin?: string | null;
+  pan?: string | null;
+  signature_url?: string | null;
+  stamp_url?: string | null;
+  
+  bank_name?: string | null;
+  bank_account_no?: string | null;
+  bank_ifsc?: string | null;
+  bank_beneficiary_name?: string | null;
+  upi_id?: string | null;
+  upi_qr_url?: string | null;
+  
+  notes?: string | null;
+  terms?: string | null;
+  custom_message?: string | null;
+  pdf_url?: string | null;
+  public_token: string;
+  
+  sent_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  
+  items?: InvoiceItem[];
+  contact?: Contact | null;
+  deal?: Deal | null;
 }
 
 export interface Quotation {

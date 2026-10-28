@@ -11,3 +11,10 @@ export function parseQuoteNumber(quoteNumber: string, prefix: string): number | 
   const parsed = parseInt(numPart, 10);
   return isNaN(parsed) ? null : parsed;
 }
+
+export function formatInvoiceNumber(prefix: string, num: number, type: 'proforma' | 'tax_invoice'): string {
+  const defaultPrefix = type === 'proforma' ? 'DF-PI-' : 'DF-TI-';
+  const cleanPrefix = (prefix || defaultPrefix).trim();
+  const safeNum = Math.max(1, Math.floor(num || 1));
+  return `${cleanPrefix}${safeNum.toString().padStart(4, '0')}`;
+}
