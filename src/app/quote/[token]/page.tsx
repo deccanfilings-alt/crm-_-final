@@ -89,8 +89,18 @@ export default function PublicQuotePage({
   const cgstAmount = Math.round(((quote.tax_amount || 0) / 2 + Number.EPSILON) * 100) / 100;
   const sgstAmount = Math.round(((quote.tax_amount || 0) - cgstAmount + Number.EPSILON) * 100) / 100;
 
+  const effectiveCompanyName = quote.company_name || settings.company_name || "Company";
+  const effectiveCompanyLogo = quote.company_logo_url || settings.company_logo_url;
+  const effectiveCompanyAddress = quote.company_address || settings.company_address;
+  const effectiveCompanyPhone = quote.company_phone || settings.company_phone;
+  const effectiveCompanyEmail = quote.company_email || settings.company_email;
+  const effectiveGstin = quote.gstin || settings.gstin;
+  const effectivePan = quote.pan || settings.pan;
+  const effectiveStamp = quote.stamp_url || settings.stamp_url;
+  const effectiveSignature = quote.signature_url || settings.signature_url;
+
   const upiId = settings.upi_id || "";
-  const upiQr = settings.upi_qr_url || (upiId ? `https://quickchart.io/qr?text=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=${settings.company_name}&am=${quote.total_amount}&cu=${currencyCode}`)}&size=130` : null);
+  const upiQr = settings.upi_qr_url || (upiId ? `https://quickchart.io/qr?text=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=${effectiveCompanyName}&am=${quote.total_amount}&cu=${currencyCode}`)}&size=130` : null);
 
   function formatDateDMY(dStr?: string | null): string {
     if (!dStr) return "";
@@ -186,16 +196,16 @@ export default function PublicQuotePage({
           </div>
 
           <div className="text-right">
-            {settings.company_logo_url ? (
+            {effectiveCompanyLogo ? (
               <img
-                src={settings.company_logo_url}
-                alt={settings.company_name}
+                src={effectiveCompanyLogo}
+                alt={effectiveCompanyName}
                 className="max-h-14 object-contain inline-block"
               />
             ) : (
               <div>
                 <div className="text-base font-extrabold uppercase text-slate-900 leading-tight">
-                  {settings.company_name}
+                  {effectiveCompanyName}
                 </div>
                 <div className="text-[10px] text-slate-500 uppercase tracking-wider mt-0.5">
                   One Stop For All Business Solutions
@@ -216,21 +226,21 @@ export default function PublicQuotePage({
               ISSUED BY
             </div>
             <div className="space-y-1 leading-relaxed">
-              <div><strong className="text-slate-900 inline-block w-24">Billed From:</strong> <span className="font-semibold text-slate-900">{settings.company_name}</span></div>
-              {settings.company_address && (
-                <div><strong className="text-slate-700 inline-block w-24 align-top">Address:</strong> <span className="text-slate-600 inline-block max-w-[240px]">{settings.company_address}</span></div>
+              <div><strong className="text-slate-900 inline-block w-24">Billed From:</strong> <span className="font-semibold text-slate-900">{effectiveCompanyName}</span></div>
+              {effectiveCompanyAddress && (
+                <div><strong className="text-slate-700 inline-block w-24 align-top">Address:</strong> <span className="text-slate-600 inline-block max-w-[240px]">{effectiveCompanyAddress}</span></div>
               )}
-              {settings.company_phone && (
-                <div><strong className="text-slate-700 inline-block w-24">Phone :</strong> <span className="text-slate-600">{settings.company_phone}</span></div>
+              {effectiveCompanyPhone && (
+                <div><strong className="text-slate-700 inline-block w-24">Phone :</strong> <span className="text-slate-600">{effectiveCompanyPhone}</span></div>
               )}
-              {settings.company_email && (
-                <div><strong className="text-slate-700 inline-block w-24">Email Id :</strong> <span className="text-slate-600">{settings.company_email}</span></div>
+              {effectiveCompanyEmail && (
+                <div><strong className="text-slate-700 inline-block w-24">Email Id :</strong> <span className="text-slate-600">{effectiveCompanyEmail}</span></div>
               )}
-              {settings.gstin && (
-                <div><strong className="text-slate-900 inline-block w-24">GST IN :</strong> <span className="font-semibold text-slate-900">{settings.gstin}</span></div>
+              {effectiveGstin && (
+                <div><strong className="text-slate-900 inline-block w-24">GST IN :</strong> <span className="font-semibold text-slate-900">{effectiveGstin}</span></div>
               )}
-              {settings.pan && (
-                <div><strong className="text-slate-900 inline-block w-24">PAN :</strong> <span className="font-semibold text-slate-900">{settings.pan}</span></div>
+              {effectivePan && (
+                <div><strong className="text-slate-900 inline-block w-24">PAN :</strong> <span className="font-semibold text-slate-900">{effectivePan}</span></div>
               )}
             </div>
           </div>
@@ -355,17 +365,33 @@ export default function PublicQuotePage({
 
         {/* Authorized Signature Bottom Right */}
         <div className="flex justify-end mt-12">
-          <div className="text-center min-w-[200px]">
+          <div className="text-center min-w-[220px]">
             <div className="text-xs font-bold text-slate-900 uppercase">
-              {settings.company_name}
+              {effectiveCompanyName}
             </div>
-            <div className="h-14 flex items-center justify-center my-1">
-              <div className="w-12 h-12 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center text-[8px] text-slate-400 mr-3">
-                SEAL
-              </div>
-              <div className="italic font-serif text-lg text-slate-700 -rotate-6">
-                Authorized
-              </div>
+            <div className="min-h-16 flex items-center justify-center my-1 gap-3">
+              {effectiveStamp ? (
+                <img
+                  src={effectiveStamp}
+                  alt="Official Seal"
+                  className="max-h-16 max-w-[85px] object-contain shrink-0"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center text-[8px] text-slate-400">
+                  SEAL
+                </div>
+              )}
+              {effectiveSignature ? (
+                <img
+                  src={effectiveSignature}
+                  alt="Authorized Signature"
+                  className="max-h-14 max-w-[140px] object-contain shrink-0"
+                />
+              ) : (
+                <div className="italic font-serif text-lg text-slate-700 -rotate-6">
+                  Authorized
+                </div>
+              )}
             </div>
             <div className="border-t border-slate-400 pt-1 text-xs text-slate-600">
               Authorized Signature

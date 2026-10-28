@@ -3,6 +3,17 @@ import type { Quotation, QuotationSettings } from '@/types';
 export function renderQuotationHtml(quote: Quotation, settings: QuotationSettings): string {
   const items = quote.items || [];
   
+  // Effective company details (quote overrides default settings)
+  const effectiveCompanyName = quote.company_name || settings.company_name || 'Company';
+  const effectiveCompanyLogo = quote.company_logo_url || settings.company_logo_url;
+  const effectiveCompanyAddress = quote.company_address || settings.company_address;
+  const effectiveCompanyPhone = quote.company_phone || settings.company_phone;
+  const effectiveCompanyEmail = quote.company_email || settings.company_email;
+  const effectiveGstin = quote.gstin || settings.gstin;
+  const effectivePan = quote.pan || settings.pan;
+  const effectiveStamp = quote.stamp_url || settings.stamp_url;
+  const effectiveSignature = quote.signature_url || settings.signature_url;
+
   // Format Date as DD-MM-YYYY
   function formatDateDMY(dStr?: string | null): string {
     if (!dStr) return '';
@@ -27,7 +38,7 @@ export function renderQuotationHtml(quote: Quotation, settings: QuotationSetting
 
   // UPI QR Code URL
   const upiId = settings.upi_id || '';
-  const upiQr = settings.upi_qr_url || (upiId ? `https://quickchart.io/qr?text=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=${settings.company_name}&am=${quote.total_amount}&cu=${currencyCode}`)}&size=130` : null);
+  const upiQr = settings.upi_qr_url || (upiId ? `https://quickchart.io/qr?text=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=${effectiveCompanyName}&am=${quote.total_amount}&cu=${currencyCode}`)}&size=130` : null);
 
   const tableRows = items.map((item, idx) => {
     const gstRateStr = quote.tax_type === 'none' ? '0 %' : `${item.tax_rate || quote.tax_rate || 18} %`;
@@ -119,11 +130,11 @@ export function renderQuotationHtml(quote: Quotation, settings: QuotationSetting
           </table>
         </td>
         <td style="width: 30%; vertical-align: top; text-align: right;">
-          ${settings.company_logo_url ? `
-            <img src="${escapeHtml(settings.company_logo_url)}" alt="Logo" style="max-height: 52px; object-fit: contain;" />
+          ${effectiveCompanyLogo ? `
+            <img src="${escapeHtml(effectiveCompanyLogo)}" alt="Logo" style="max-height: 52px; object-fit: contain;" />
           ` : `
             <div style="font-weight: 800; font-size: 15px; color: #111827; line-height: 1.2;">
-              ${escapeHtml(settings.company_name)}
+              ${escapeHtml(effectiveCompanyName)}
             </div>
             <div style="font-size: 9px; color: #6b7280; text-transform: uppercase; margin-top: 2px;">
               One Stop For All Business Solutions
@@ -147,36 +158,36 @@ export function renderQuotationHtml(quote: Quotation, settings: QuotationSetting
           <table style="font-size: 12px; line-height: 1.5;">
             <tr>
               <td style="font-weight: 700; color: #111827; width: 85px; vertical-align: top;">Billed From:</td>
-              <td style="font-weight: 600; color: #111827; vertical-align: top;">${escapeHtml(settings.company_name)}</td>
+              <td style="font-weight: 600; color: #111827; vertical-align: top;">${escapeHtml(effectiveCompanyName)}</td>
             </tr>
-            ${settings.company_address ? `
+            ${effectiveCompanyAddress ? `
             <tr>
               <td style="font-weight: 700; color: #374151; vertical-align: top;">Address:</td>
-              <td style="color: #374151; vertical-align: top;">${escapeHtml(settings.company_address)}</td>
+              <td style="color: #374151; vertical-align: top;">${escapeHtml(effectiveCompanyAddress)}</td>
             </tr>
             ` : ''}
-            ${settings.company_phone ? `
+            ${effectiveCompanyPhone ? `
             <tr>
               <td style="font-weight: 700; color: #374151;">Phone :</td>
-              <td style="color: #374151;">${escapeHtml(settings.company_phone)}</td>
+              <td style="color: #374151;">${escapeHtml(effectiveCompanyPhone)}</td>
             </tr>
             ` : ''}
-            ${settings.company_email ? `
+            ${effectiveCompanyEmail ? `
             <tr>
               <td style="font-weight: 700; color: #374151;">Email Id :</td>
-              <td style="color: #374151;">${escapeHtml(settings.company_email)}</td>
+              <td style="color: #374151;">${escapeHtml(effectiveCompanyEmail)}</td>
             </tr>
             ` : ''}
-            ${settings.gstin ? `
+            ${effectiveGstin ? `
             <tr>
               <td style="font-weight: 700; color: #111827;">GST IN :</td>
-              <td style="font-weight: 600; color: #111827;">${escapeHtml(settings.gstin)}</td>
+              <td style="font-weight: 600; color: #111827;">${escapeHtml(effectiveGstin)}</td>
             </tr>
             ` : ''}
-            ${settings.pan ? `
+            ${effectivePan ? `
             <tr>
               <td style="font-weight: 700; color: #111827;">PAN :</td>
-              <td style="font-weight: 600; color: #111827;">${escapeHtml(settings.pan)}</td>
+              <td style="font-weight: 600; color: #111827;">${escapeHtml(effectivePan)}</td>
             </tr>
             ` : ''}
           </table>
@@ -252,7 +263,7 @@ export function renderQuotationHtml(quote: Quotation, settings: QuotationSetting
                 </td>
               ` : ''}
               <td style="vertical-align: top; font-size: 12px; line-height: 1.6;">
-                <div><strong>Name :</strong> ${escapeHtml(settings.bank_beneficiary_name || settings.company_name)}</div>
+                <div><strong>Name :</strong> ${escapeHtml(settings.bank_beneficiary_name || effectiveCompanyName)}</div>
                 ${settings.bank_name ? `<div><strong>Bank Name :</strong> ${escapeHtml(settings.bank_name)},</div>` : ''}
                 ${settings.bank_account_no ? `<div><strong>Bank Account No :</strong> ${escapeHtml(settings.bank_account_no)}</div>` : ''}
                 ${settings.bank_ifsc ? `<div><strong>Bank/IFSC Code :</strong> ${escapeHtml(settings.bank_ifsc)}</div>` : ''}
@@ -299,21 +310,27 @@ export function renderQuotationHtml(quote: Quotation, settings: QuotationSetting
 
     <!-- Authorized Signature Section (Bottom Right) -->
     <div style="display: flex; justify-content: flex-end; margin-top: 40px; page-break-inside: avoid;">
-      <div style="text-align: center; min-width: 200px;">
+      <div style="text-align: center; min-width: 220px;">
         <div style="font-size: 12px; font-weight: 700; color: #111827; text-transform: uppercase;">
-          ${escapeHtml(settings.company_name)}
+          ${escapeHtml(effectiveCompanyName)}
         </div>
         
-        <!-- Stamp & Signature Placeholders -->
-        <div style="height: 60px; margin: 8px 0; display: flex; align-items: center; justify-content: center; position: relative;">
-          <!-- Circular seal/stamp placeholder -->
-          <div style="width: 50px; height: 50px; border: 2px dashed #9ca3af; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #9ca3af; text-transform: uppercase; margin-right: 15px;">
-            SEAL
-          </div>
-          <!-- Signature cursive placeholder -->
-          <div style="font-family: 'Brush Script MT', cursive, sans-serif; font-size: 24px; color: #1f2937; transform: rotate(-5deg);">
-            Authorized
-          </div>
+        <!-- Stamp & Signature Container -->
+        <div style="min-height: 65px; margin: 8px 0; display: flex; align-items: center; justify-content: center; gap: 14px; position: relative;">
+          ${effectiveStamp ? `
+            <img src="${escapeHtml(effectiveStamp)}" alt="Official Seal" style="max-height: 60px; max-width: 85px; object-fit: contain;" />
+          ` : `
+            <div style="width: 50px; height: 50px; border: 2px dashed #9ca3af; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #9ca3af; text-transform: uppercase;">
+              SEAL
+            </div>
+          `}
+          ${effectiveSignature ? `
+            <img src="${escapeHtml(effectiveSignature)}" alt="Authorized Signature" style="max-height: 50px; max-width: 140px; object-fit: contain;" />
+          ` : `
+            <div style="font-family: 'Brush Script MT', cursive, sans-serif; font-size: 24px; color: #1f2937; transform: rotate(-5deg);">
+              Authorized
+            </div>
+          `}
         </div>
 
         <div style="border-top: 1px solid #9ca3af; padding-top: 4px; font-size: 12px; color: #374151;">
