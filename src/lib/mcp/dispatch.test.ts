@@ -280,3 +280,4 @@ describe('MCP Dispatch: Rate Limiting & Audit Logging (Task 2)', () => {
     expect(data.contacts[0].name).toBe('John Doe');
   });
 });
+

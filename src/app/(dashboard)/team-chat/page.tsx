@@ -746,7 +746,7 @@ export default function TeamChatPage() {
   }
 
   // Jump and highlight specific message (for quotes)
-  const handleJumpToMessage = async (messageId: string) => {
+  const handleJumpToMessage = useCallback(async (messageId: string) => {
     let target = document.getElementById(`message-${messageId}`)
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "center" })
@@ -775,12 +775,13 @@ export default function TeamChatPage() {
     if (!found) {
       toast.info("That message is further back; scroll up to load more")
     }
-  }
+  }, [loadOlderMessages])
 
 // Handle deep-links ?room=<roomId>&m=<messageId>
   const deepLinkHandledRef = useRef(false)
   useEffect(() => {
     if (typeof window === "undefined" || deepLinkHandledRef.current) return
+    deepLinkHandledRef.current = true
     const params = new URLSearchParams(window.location.search)
     const targetRoom = params.get("room")
     const targetMessage = params.get("m")
@@ -798,7 +799,7 @@ export default function TeamChatPage() {
       }, 600)
       return () => clearTimeout(timer)
     }
-  }, [handleJumpToMessage])
+  }, [activeRoomId, handleJumpToMessage])
 
   const isDm = Boolean(activeRoom?.is_direct)
   const partner = activeRoom?.dm_partner

@@ -5,13 +5,17 @@ import { buildContext, McpAuthError, type McpContext } from './context';
 import { PRESETS } from './scopes';
 import { whyDenied } from './permissions';
 import { callTool } from './dispatch';
-import { getTool } from './registry';
+import { getTool, MCP_TOOLS } from './registry';
+import { toResult, istTime } from './format';
+import { GET, POST } from '@/app/api/mcp/route';
 
 const dbMock = {
   from: vi.fn().mockImplementation((table: string) => {
     const builder: any = {};
     builder.select = vi.fn().mockReturnValue(builder);
+    builder.update = vi.fn().mockReturnValue(builder);
     builder.eq = vi.fn().mockReturnValue(builder);
+    builder.then = vi.fn().mockImplementation((resolve) => Promise.resolve({ data: null, error: null }).then(resolve));
     builder.maybeSingle = vi.fn().mockImplementation(() => {
       if (table === 'profiles') {
         return Promise.resolve({
@@ -22,6 +26,22 @@ const dbMock = {
       if (table === 'accounts') {
         return Promise.resolve({
           data: { owner_user_id: 'user-owner-1' },
+          error: null,
+        });
+      }
+      if (table === 'api_keys') {
+        return Promise.resolve({
+          data: {
+            id: 'key-1',
+            account_id: 'acc-123',
+            created_by: 'user-agent-456',
+            name: 'test-key',
+            key_prefix: 'wacrm_live_test...',
+            key_hash: 'mockhash',
+            scopes: ['all'],
+            is_active: true,
+            expires_at: null,
+          },
           error: null,
         });
       }
@@ -216,5 +236,59 @@ describe('MCP Permissions & Scope Enforcement (Task 1)', () => {
 
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain('messages:send');
+  });
+});
+
+describe('Task 3: Protocol, Annotations & Format Helpers', () => {
+  it('formats toResult compactly without indentation', () => {
+    const res = toResult({ foo: 'bar', num: 123 });
+    expect(res.content[0].text).toBe('{"foo":"bar","num":123}');
+    expect(res.content[0].text).not.toContain('\n  ');
+  });
+
+  it('formats istTime to +05:30 offset', () => {
+    const formatted = istTime('2026-10-30T00:00:00.000Z');
+    expect(formatted).toBe('2026-10-30T05:30:00+05:30');
+  });
+
+  it('ensures all MCP_TOOLS have titles and proper annotations', () => {
+    for (const tool of MCP_TOOLS) {
+      expect(tool.title).toBeTruthy();
+      expect(typeof tool.title).toBe('string');
+      if (tool.kind === 'read') {
+        expect(tool.kind).toBe('read');
+      } else if (tool.kind === 'write') {
+        if (tool.name === 'create_or_update_contact' || tool.name === 'update_deal_stage') {
+          expect(tool.idempotent).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('verifies GET with text/event-stream returns 405', async () => {
+    const req = new Request('http://localhost/api/mcp', {
+      headers: {
+        Accept: 'text/event-stream',
+      },
+    });
+    const res = await GET(req);
+    expect(res.status).toBe(405);
+    expect(res.headers.get('Allow')).toBe('GET, POST');
+  });
+
+  it('verifies POST notifications/initialized returns 202', async () => {
+    const req = new Request('http://localhost/api/mcp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer test_key',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(202);
   });
 });

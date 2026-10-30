@@ -126,3 +126,4 @@ describe('Invitation Signup API', () => {
     expect(body.error).toContain('already has an account');
   });
 });
+

@@ -29,3 +29,4 @@ DROP POLICY IF EXISTS mcp_tool_calls_admin_select ON mcp_tool_calls;
 CREATE POLICY mcp_tool_calls_admin_select ON mcp_tool_calls FOR SELECT
   USING (is_account_member(account_id, 'admin'));
 -- No insert, update or delete policies: only the service role writes, and nobody edits the log.
+

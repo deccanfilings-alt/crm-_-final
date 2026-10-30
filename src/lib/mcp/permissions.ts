@@ -14,3 +14,4 @@ export function whyDenied(ctx: McpContext, tool: McpTool): string | null {
   }
   return null;
 }
+

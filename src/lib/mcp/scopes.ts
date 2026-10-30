@@ -27,3 +27,4 @@ export const PRESETS = {
   assistant: [...READ, 'contacts:write', 'notes:write', 'deals:write', 'tasks:write', 'team_chat:write'],
   full: [...SCOPES], // adds messages:send
 } satisfies Record<string, Scope[]>;
+

@@ -77,3 +77,4 @@ describe('/api/v1/* Scopes Enforcement', () => {
     expect(res.status).toBe(200);
   });
 });
+

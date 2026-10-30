@@ -47,3 +47,4 @@ const toolMap = new Map<string, McpTool>(MCP_TOOLS.map((t) => [t.name, t]));
 export function getTool(name: string): McpTool | undefined {
   return toolMap.get(name);
 }
+

@@ -196,3 +196,4 @@ $$;
 
 REVOKE ALL ON FUNCTION public.kpi_progress(UUID, DATE, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.kpi_progress(UUID, DATE, TEXT) TO authenticated, service_role;
+
