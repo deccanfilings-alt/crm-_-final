@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +40,8 @@ function LoginPageInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
@@ -46,30 +49,19 @@ function LoginPageInner() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setUnconfirmedEmail(null);
     setLoading(true);
-    let { error } = await supabase.auth.signInWithPassword({
+
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    // If email is unconfirmed (e.g. SMTP delay/drop), auto-confirm and retry
     if (error && error.message.toLowerCase().includes("email not confirmed")) {
-      try {
-        const confirmRes = await fetch("/api/auth/confirm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
-        if (confirmRes.ok) {
-          const retry = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-          error = retry.error;
-        }
-      } catch {
-        // Fall back to original error
-      }
+      setError("Please confirm your email first.");
+      setUnconfirmedEmail(email);
+      setLoading(false);
+      return;
     }
 
     if (error) {
@@ -82,6 +74,26 @@ function LoginPageInner() {
       router.push(`/join/${encodeURIComponent(inviteToken)}`);
     } else {
       router.push("/dashboard");
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!unconfirmedEmail) return;
+    setResending(true);
+    try {
+      const { error: resendErr } = await supabase.auth.resend({
+        type: "signup",
+        email: unconfirmedEmail,
+      });
+      if (resendErr) {
+        toast.error(resendErr.message);
+      } else {
+        toast.success("Confirmation email resent. Please check your inbox.");
+      }
+    } catch {
+      toast.error("Failed to resend confirmation email");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -109,7 +121,17 @@ function LoginPageInner() {
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             {error && (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
+                <p>{error}</p>
+                {unconfirmedEmail && (
+                  <button
+                    type="button"
+                    onClick={handleResendConfirmation}
+                    disabled={resending}
+                    className="mt-2 text-xs font-semibold text-primary underline hover:text-primary/80 disabled:opacity-50 block"
+                  >
+                    {resending ? "Resending email..." : "Resend email"}
+                  </button>
+                )}
               </div>
             )}
 
