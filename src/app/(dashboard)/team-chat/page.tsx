@@ -268,9 +268,16 @@ export default function TeamChatPage() {
         setUnreadCounts(initialUnreads)
 
         if (!activeRoomId) {
-          const first = channels[0] || dms[0]
-          if (first) {
-            setActiveRoomId(first.id)
+          const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null
+          const targetRoom = urlParams?.get("room")
+          const targetExists = targetRoom && (channels.some((c: any) => c.id === targetRoom) || dms.some((d: any) => d.id === targetRoom))
+          if (targetExists) {
+            setActiveRoomId(targetRoom)
+          } else {
+            const first = channels[0] || dms[0]
+            if (first) {
+              setActiveRoomId(first.id)
+            }
           }
         }
       }
@@ -739,7 +746,7 @@ export default function TeamChatPage() {
   }
 
   // Jump and highlight specific message (for quotes)
-  const handleJumpToMessage = async (messageId: string) => {
+  const handleJumpToMessage = useCallback(async (messageId: string) => {
     let target = document.getElementById(`message-${messageId}`)
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "center" })
@@ -768,11 +775,13 @@ export default function TeamChatPage() {
     if (!found) {
       toast.info("That message is further back; scroll up to load more")
     }
-  }
+  }, [loadOlderMessages])
 
 // Handle deep-links ?room=<roomId>&m=<messageId>
+  const deepLinkHandledRef = useRef(false)
   useEffect(() => {
-    if (typeof window === "undefined") return
+    if (typeof window === "undefined" || deepLinkHandledRef.current) return
+    deepLinkHandledRef.current = true
     const params = new URLSearchParams(window.location.search)
     const targetRoom = params.get("room")
     const targetMessage = params.get("m")
@@ -781,8 +790,12 @@ export default function TeamChatPage() {
       setActiveRoomId(targetRoom)
     }
     if (targetMessage) {
+      deepLinkHandledRef.current = true
       const timer = setTimeout(() => {
         handleJumpToMessage(targetMessage)
+        const cleanUrl = new URL(window.location.href)
+        cleanUrl.searchParams.delete("m")
+        window.history.replaceState({}, "", cleanUrl.toString())
       }, 600)
       return () => clearTimeout(timer)
     }
@@ -814,6 +827,12 @@ export default function TeamChatPage() {
         activeRoomId={activeRoomId}
         onSelectRoom={(roomId) => {
           setActiveRoomId(roomId)
+          if (typeof window !== "undefined") {
+            const newUrl = new URL(window.location.href)
+            newUrl.searchParams.set("room", roomId)
+            newUrl.searchParams.delete("m")
+            window.history.replaceState({}, "", newUrl.toString())
+          }
           setUnreadCounts((prev) => {
             const n = { ...prev }
             delete n[roomId]
