@@ -1,7 +1,10 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { authenticateAgentRequest } from '@/lib/auth/agent-auth';
-import { WACRM_MCP_TOOLS } from '@/lib/mcp/tools';
-import { executeMCPTool } from '@/lib/mcp/handlers';
+import { buildContext, McpAuthError, type McpContext } from '@/lib/mcp/context';
+import { MCP_TOOLS } from '@/lib/mcp/registry';
+import { whyDenied } from '@/lib/mcp/permissions';
+import { callTool } from '@/lib/mcp/dispatch';
+import { JsonRpcError } from '@/lib/mcp/format';
 import type { JSONRPCRequest, JSONRPCResponse } from '@/lib/mcp/types';
 
 const CORS_HEADERS = {
@@ -33,11 +36,10 @@ export async function GET(req: Request) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
-        // Send initial SSE connection message
         const welcome = JSON.stringify({
           type: 'connected',
           server: 'wacrm-mcp',
-          version: '1.0.0',
+          version: '2.0.0',
           account_id: auth.account_id,
         });
         controller.enqueue(encoder.encode(`event: message\ndata: ${welcome}\n\n`));
@@ -54,17 +56,31 @@ export async function GET(req: Request) {
     });
   }
 
+  let context: McpContext | null = null;
+  if (auth.success) {
+    try {
+      context = await buildContext(auth);
+    } catch {
+      // Ignore probe context build failure
+    }
+  }
+
   // Standard JSON status & health probe (allows Claude.ai connector check to succeed)
   return NextResponse.json(
     {
       name: 'wacrm-mcp',
-      version: '1.0.0',
+      version: '2.0.0',
       description: 'WACRM Model Context Protocol (MCP) Server for Claude & Agentic Platforms',
       status: 'ready',
       authenticated: auth.success,
       account_id: auth.account_id || null,
       key_name: auth.key_name || null,
-      tools_count: WACRM_MCP_TOOLS.length,
+      acting_as: context ? { name: context.userName, role: context.role } : null,
+      scopes: context ? context.scopes : (auth.scopes || null),
+      warning: context?.legacyKey
+        ? 'This key is read-only because it has no owner. Create a new key in Settings → API keys.'
+        : undefined,
+      tools_count: MCP_TOOLS.length,
     },
     { headers: CORS_HEADERS }
   );
@@ -83,18 +99,31 @@ export async function POST(req: Request) {
     );
   }
 
+  let ctx: McpContext;
+  try {
+    ctx = await buildContext(auth);
+  } catch (err: any) {
+    const status = err instanceof McpAuthError ? err.status : 403;
+    return NextResponse.json(
+      {
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: status === 401 ? -32000 : -32003, message: err?.message || 'Forbidden' },
+      },
+      { status, headers: CORS_HEADERS }
+    );
+  }
+
   try {
     const body: JSONRPCRequest | JSONRPCRequest[] = await req.json();
 
     // Handle single or batch requests
     if (Array.isArray(body)) {
-      const results = await Promise.all(
-        body.map((r) => handleJsonRpcMessage(auth.account_id!, auth.user_id, r))
-      );
+      const results = await Promise.all(body.map((r) => handleJsonRpcMessage(ctx, r)));
       return NextResponse.json(results.filter(Boolean), { headers: CORS_HEADERS });
     }
 
-    const response = await handleJsonRpcMessage(auth.account_id!, auth.user_id, body);
+    const response = await handleJsonRpcMessage(ctx, body);
     if (!response) {
       // Notification without response
       return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
@@ -114,87 +143,103 @@ export async function POST(req: Request) {
 }
 
 async function handleJsonRpcMessage(
-  accountId: string,
-  userId: string | undefined,
+  ctx: McpContext,
   msg: JSONRPCRequest
 ): Promise<JSONRPCResponse | null> {
   const id = msg.id ?? null;
 
-  // 1. MCP initialize handshake
-  if (msg.method === 'initialize') {
-    return {
-      jsonrpc: '2.0',
-      id,
-      result: {
-        protocolVersion: '2024-11-05',
-        capabilities: {
-          tools: {
-            listChanged: false,
-          },
-        },
-        serverInfo: {
-          name: 'wacrm-mcp',
-          version: '1.0.0',
-        },
-      },
-    };
-  }
-
-  // 2. Initialized notification from client
-  if (msg.method === 'notifications/initialized') {
-    return null;
-  }
-
-  // 3. MCP ping
-  if (msg.method === 'ping') {
-    return {
-      jsonrpc: '2.0',
-      id,
-      result: {},
-    };
-  }
-
-  // 4. Tools list
-  if (msg.method === 'tools/list') {
-    return {
-      jsonrpc: '2.0',
-      id,
-      result: {
-        tools: WACRM_MCP_TOOLS,
-      },
-    };
-  }
-
-  // 5. Tools call
-  if (msg.method === 'tools/call') {
-    const { name, arguments: toolArgs } = msg.params || {};
-    if (!name) {
+  try {
+    // 1. MCP initialize handshake
+    if (msg.method === 'initialize') {
       return {
         jsonrpc: '2.0',
         id,
-        error: { code: -32602, message: 'Missing tool name in params' },
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: {
+            tools: {
+              listChanged: false,
+            },
+          },
+          serverInfo: {
+            name: 'wacrm-mcp',
+            version: '2.0.0',
+          },
+        },
       };
     }
 
-    const result = await executeMCPTool(accountId, userId, {
-      name,
-      arguments: toolArgs || {},
-    });
+    // 2. Initialized notification from client
+    if (msg.method === 'notifications/initialized') {
+      return null;
+    }
 
+    // 3. MCP ping
+    if (msg.method === 'ping') {
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {},
+      };
+    }
+
+    // 4. Tools list (filtered by whyDenied)
+    if (msg.method === 'tools/list') {
+      const allowed = MCP_TOOLS.filter((t) => whyDenied(ctx, t) === null).map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      }));
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          tools: allowed,
+        },
+      };
+    }
+
+    // 5. Tools call
+    if (msg.method === 'tools/call') {
+      const { name, arguments: toolArgs } = msg.params || {};
+      if (!name) {
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32602, message: 'Missing tool name in params' },
+        };
+      }
+
+      const result = await callTool(ctx, name, toolArgs || {});
+
+      return {
+        jsonrpc: '2.0',
+        id,
+        result,
+      };
+    }
+
+    // Unknown method
     return {
       jsonrpc: '2.0',
       id,
-      result,
+      error: {
+        code: -32601,
+        message: `Method not found: ${msg.method}`,
+      },
+    };
+  } catch (err: any) {
+    if (err instanceof JsonRpcError) {
+      return {
+        jsonrpc: '2.0',
+        id,
+        error: { code: err.code, message: err.message },
+      };
+    }
+    return {
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32603, message: err?.message || String(err) },
     };
   }
-
-  // Unknown method
-  return {
-    jsonrpc: '2.0',
-    id,
-    error: {
-      code: -32601,
-      message: `Method not found: ${msg.method}`,
-    },
-  };
 }

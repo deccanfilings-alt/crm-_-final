@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { authenticateAgentRequest } from '@/lib/auth/agent-auth';
+import { authenticateAgentRequest, hasScope } from '@/lib/auth/agent-auth';
 import { executeMCPTool } from '@/lib/mcp/handlers';
 
 const CORS_HEADERS = {
@@ -16,6 +16,13 @@ export async function POST(req: Request) {
   const auth = await authenticateAgentRequest(req);
   if (!auth.success) {
     return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: auth.status || 401, headers: CORS_HEADERS });
+  }
+
+  if (!hasScope(auth.scopes, 'messages:send')) {
+    return NextResponse.json(
+      { error: 'Forbidden: Missing required scope "messages:send"' },
+      { status: 403, headers: CORS_HEADERS }
+    );
   }
 
   try {
