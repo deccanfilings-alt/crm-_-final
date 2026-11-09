@@ -67,6 +67,8 @@ interface ReplyDraft {
   id: string;
   authorLabel: string;
   preview: string;
+  mode?: "reply" | "correction";
+  prefill?: string;
 }
 
 
@@ -176,7 +178,9 @@ export function MessageThread({
   onToggleContactPanel,
   viewingAgents = [],
 }: MessageThreadProps) {
-  const { user } = useAuth();
+  const { user, accountRole } = useAuth();
+  const isAdmin = accountRole === "owner" || accountRole === "admin";
+  const canWrite = accountRole === "owner" || accountRole === "admin" || accountRole === "agent";
   const { activeUsers, setTyping } = usePresence(conversation?.id || "");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -489,7 +493,7 @@ export function MessageThread({
   }, [messages]);
 
   const handleSend = useCallback(
-    async (text: string, replyToId?: string, isInternal?: boolean) => {
+    async (text: string, replyToId?: string, isInternal?: boolean, correctionOfId?: string) => {
       if (!conversation) return;
 
       const tempId = `temp-${Date.now()}`;
@@ -505,6 +509,7 @@ export function MessageThread({
         status: "sending",
         created_at: new Date().toISOString(),
         reply_to_message_id: replyToId,
+        correction_of_message_id: correctionOfId,
         is_internal: !!isInternal,
       };
       onNewMessage(optimisticMsg);
@@ -519,6 +524,7 @@ export function MessageThread({
             message_type: "text",
             content_text: text,
             reply_to_message_id: replyToId,
+            correction_of_message_id: correctionOfId,
             is_internal: !!isInternal,
           }),
         });
@@ -767,6 +773,54 @@ export function MessageThread({
     [authorLabelFor],
   );
 
+  // "Send correction": WhatsApp can't edit a sent message, so we quote the
+  // original and pre-fill the composer with its text.
+  const handleStartCorrection = useCallback((msg: Message) => {
+    setReplyTo({
+      id: msg.id,
+      authorLabel: "Correcting your message",
+      preview: buildReplyPreview(msg),
+      mode: "correction",
+      prefill: msg.content_text ?? "",
+    });
+  }, []);
+
+  // "Delete for me" / restore — team inbox only; the client keeps the message.
+  const handleSetHidden = useCallback(
+    async (msg: Message, hidden: boolean) => {
+      if (msg.id.startsWith("temp-")) {
+        toast.error("Wait for the message to finish sending");
+        return;
+      }
+      if (hidden && !confirm("Delete this message for your team? The client will still have it on WhatsApp.")) return;
+      const before = { hidden_at: msg.hidden_at ?? null, hidden_by: msg.hidden_by ?? null };
+      onUpdateMessage(msg.id, hidden
+        ? { hidden_at: new Date().toISOString(), hidden_by: user?.id ?? null }
+        : { hidden_at: null, hidden_by: null });
+      try {
+        const res = await fetch(`/api/whatsapp/messages/${msg.id}/hide`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hidden }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+        onUpdateMessage(msg.id, data.message);
+        toast.success(hidden ? "Message deleted for your team" : "Message restored");
+      } catch (err) {
+        onUpdateMessage(msg.id, before);
+        toast.error(err instanceof Error ? err.message : "Could not update the message");
+      }
+    },
+    [onUpdateMessage, user?.id],
+  );
+
+  const profileNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of profiles) map.set(p.user_id, p.full_name);
+    return map;
+  }, [profiles]);
+
   // Single reaction-set primitive. emoji === "" removes; otherwise adds/swaps.
   // The "toggle" semantic (pill click) is computed at the call site where the
   // current reactions for the bubble are already in scope — keeps this
@@ -898,7 +952,10 @@ export function MessageThread({
   }
 
   const displayName = contact.name || contact.phone || (contact.instagram_username ? `@${contact.instagram_username}` : "Unknown Contact");
-  const messageGroups = groupMessagesByDate(messages);
+  // "Delete for me": agents don't see hidden messages; admins see them dimmed.
+  const messageGroups = groupMessagesByDate(
+    isAdmin ? messages : messages.filter((m) => !m.hidden_at),
+  );
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
   );
@@ -1348,6 +1405,16 @@ export function MessageThread({
                       const next = own?.emoji === emoji ? "" : emoji;
                       void postReaction(msg.id, next);
                     };
+                    const isOwnSent =
+                      (msg.sender_type === "agent" || msg.sender_type === "bot") &&
+                      !msg.is_internal &&
+                      !!msg.message_id &&
+                      msg.status !== "failed" &&
+                      msg.status !== "sending";
+                    const canCorrect =
+                      canWrite && isOwnSent && msg.content_type === "text" && !msg.hidden_at;
+                    const canUnhide =
+                      !!msg.hidden_at && (isAdmin || msg.hidden_by === user?.id);
                     return (
                       <MessageActions
                         key={msg.id}
@@ -1356,6 +1423,9 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onCorrect={canCorrect ? () => handleStartCorrection(msg) : undefined}
+                        onHide={canWrite && !msg.hidden_at ? () => void handleSetHidden(msg, true) : undefined}
+                        onUnhide={canUnhide ? () => void handleSetHidden(msg, false) : undefined}
                       >
                         <MessageBubble
                           message={msg}
@@ -1363,6 +1433,13 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          hiddenByName={
+                            msg.hidden_at
+                              ? msg.hidden_by === user?.id
+                                ? "you"
+                                : profileNameById.get(msg.hidden_by ?? "") ?? "a team member"
+                              : undefined
+                          }
                         />
                       </MessageActions>
                     );

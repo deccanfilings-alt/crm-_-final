@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
+import { CornerUpLeft, Copy, MoreHorizontal, PencilLine, SmilePlus, Trash2, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -9,6 +9,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Message } from "@/types";
 
 // WhatsApp's own quick-reaction bar starts with these six. Picking the same
@@ -19,6 +25,12 @@ interface MessageActionsProps {
   message: Message;
   onReply: () => void;
   onReact: (emoji: string) => void;
+  /** "Send correction" — only passed for our own sent text messages. */
+  onCorrect?: () => void;
+  /** "Delete for me" — hides the message from the team inbox. */
+  onHide?: () => void;
+  /** Restore a hidden message (admins, or whoever hid it). */
+  onUnhide?: () => void;
   children: ReactNode;
 }
 
@@ -31,8 +43,13 @@ export function MessageActions({
   message,
   onReply,
   onReact,
+  onCorrect,
+  onHide,
+  onUnhide,
   children,
 }: MessageActionsProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const hasMenu = Boolean(onCorrect || onHide || onUnhide);
   // Touch devices have no hover. Long-press fires `contextmenu`; we capture
   // it, suppress the native menu, and pin the toolbar open until the user
   // interacts elsewhere.
@@ -93,7 +110,7 @@ export function MessageActions({
       <div className="group/actions relative min-w-0 max-w-[75%]">
         {children}
       <div
-        data-touch-open={touchOpen || pickerOpen ? "true" : undefined}
+        data-touch-open={touchOpen || pickerOpen || menuOpen ? "true" : undefined}
         className={cn(
           "absolute -top-3 z-10 flex h-7 items-center gap-0.5 rounded-full border border-border bg-popover/95 px-1 shadow-md backdrop-blur-sm transition-opacity",
           "opacity-0 group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
@@ -141,6 +158,52 @@ export function MessageActions({
         >
           <Copy className="h-3.5 w-3.5" />
         </button>
+        {hasMenu && (
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger
+              className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+              aria-label="More actions"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={isAgent ? "end" : "start"} className="w-52">
+              {onCorrect && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    onCorrect();
+                    setTouchOpen(false);
+                  }}
+                >
+                  <PencilLine className="mr-2 h-3.5 w-3.5" />
+                  Send correction
+                </DropdownMenuItem>
+              )}
+              {onHide && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    onHide();
+                    setTouchOpen(false);
+                  }}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete for me
+                </DropdownMenuItem>
+              )}
+              {onUnhide && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    onUnhide();
+                    setTouchOpen(false);
+                  }}
+                >
+                  <Undo2 className="mr-2 h-3.5 w-3.5" />
+                  Restore message
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
       </div>
     </div>

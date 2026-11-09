@@ -75,6 +75,7 @@ export function ReplyQuote({
 
 /** Build the one-line preview text shown inside a reply quote. */
 export function buildReplyPreview(message: Message): string {
+  if (message.revoked_at) return "[Deleted message]";
   if (message.content_text) return message.content_text;
   switch (message.content_type) {
     case "image":

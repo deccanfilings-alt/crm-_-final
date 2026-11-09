@@ -212,6 +212,19 @@ export interface Message {
   interactive_reply_id?: string;
   /** Structured failure details from Meta Cloud API or sending logic. */
   error_details?: MessageErrorDetails | string | null;
+  /** "Delete for me": hidden from the team inbox (client still has it). */
+  hidden_at?: string | null;
+  hidden_by?: string | null;
+  /** On a correction message: the original message it corrects. */
+  correction_of_message_id?: string | null;
+  /** On an original message: when a correction was sent for it. */
+  corrected_at?: string | null;
+  /** Client edited this message (Meta edit webhook). */
+  edited_at?: string | null;
+  /** First version of a message the client later edited. */
+  original_content_text?: string | null;
+  /** Client deleted this message for everyone (Meta revoke webhook). */
+  revoked_at?: string | null;
 }
 
 export interface MessageErrorDetails {

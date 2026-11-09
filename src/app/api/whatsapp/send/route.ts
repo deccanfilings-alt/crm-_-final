@@ -75,7 +75,7 @@ export async function POST(request: Request) {
       template_language,
       template_params,
       template_message_params,
-      reply_to_message_id,
+      correction_of_message_id,
       is_internal,
       buttons,
       button_label,
@@ -90,6 +90,39 @@ export async function POST(request: Request) {
         { error: 'conversation_id and message_type are required' },
         { status: 400 }
       )
+    }
+
+    // "Send correction": WhatsApp's Cloud API can't edit a sent message,
+    // so a correction is a new text message that quotes the original.
+    // The original must be one of our own sent text messages in this
+    // conversation.
+    let reply_to_message_id: string | undefined = body.reply_to_message_id
+    if (correction_of_message_id) {
+      if (message_type !== 'text' || is_internal) {
+        return NextResponse.json(
+          { error: 'A correction must be a normal text message' },
+          { status: 400 }
+        )
+      }
+      const { data: original } = await supabase
+        .from('messages')
+        .select('id, sender_type, is_internal, message_id, status')
+        .eq('id', correction_of_message_id)
+        .eq('conversation_id', conversation_id)
+        .maybeSingle()
+      if (
+        !original ||
+        !['agent', 'bot'].includes(original.sender_type) ||
+        original.is_internal ||
+        !original.message_id ||
+        original.status === 'failed'
+      ) {
+        return NextResponse.json(
+          { error: 'You can only correct a message your team sent successfully in this chat' },
+          { status: 400 }
+        )
+      }
+      reply_to_message_id = original.id
     }
 
     const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const
@@ -574,6 +607,9 @@ export async function POST(request: Request) {
         message_id: sentMessageId || null,
         status: 'sent',
         reply_to_message_id: reply_to_message_id || null,
+        // Only written for corrections, so normal sends keep working even
+        // if migration 069 hasn't been applied yet.
+        ...(correction_of_message_id ? { correction_of_message_id } : {}),
         is_internal: !!is_internal,
       })
       .select()
@@ -585,6 +621,15 @@ export async function POST(request: Request) {
         { error: `Message sent to Meta but failed to save to DB: ${msgError.message}` },
         { status: 500 }
       )
+    }
+
+    if (correction_of_message_id) {
+      const { error: corrErr } = await supabase
+        .from('messages')
+        .update({ corrected_at: new Date().toISOString() })
+        .eq('id', correction_of_message_id)
+        .eq('conversation_id', conversation_id)
+      if (corrErr) console.error('[whatsapp/send] failed to mark original as corrected:', corrErr.message)
     }
 
     // Update conversation

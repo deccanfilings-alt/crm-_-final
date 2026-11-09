@@ -71,6 +71,10 @@ interface ReplyDraft {
   id: string;
   authorLabel: string;
   preview: string;
+  /** 'correction' = "Send correction" for one of our own messages. */
+  mode?: "reply" | "correction";
+  /** Text to pre-fill the composer with (correction mode). */
+  prefill?: string;
 }
 
 // Mirrors the chat-media bucket's allowed_mime_types (migration 023) for
@@ -96,7 +100,7 @@ interface MediaDraft {
 interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
-  onSend: (text: string, replyToId?: string, isInternal?: boolean) => void;
+  onSend: (text: string, replyToId?: string, isInternal?: boolean, correctionOfId?: string) => void;
   onSendMedia: (payload: SendMediaPayload & { isInternal?: boolean }) => void;
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
@@ -128,6 +132,19 @@ export function MessageComposer({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [isInternal, setIsInternal] = useState(false);
+
+  // Correction mode: pre-fill the original text once per target message.
+  // (Adjusting state while rendering is React's recommended pattern for
+  // reacting to a prop change, instead of an effect.)
+  const isCorrection = replyTo?.mode === "correction";
+  const [prefilledFor, setPrefilledFor] = useState<string | null>(null);
+  if (isCorrection && replyTo && replyTo.id !== prefilledFor) {
+    setPrefilledFor(replyTo.id);
+    setText(replyTo.prefill ?? "");
+    setIsInternal(false);
+  } else if (!isCorrection && prefilledFor !== null) {
+    setPrefilledFor(null);
+  }
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
@@ -220,16 +237,20 @@ export function MessageComposer({
     setSending(true);
     // Let the parent manage the Promise so the UI is snappy;
     // clearing the text immediately is standard chat UX.
-    onSend(trimmed, replyTo?.id, isInternal);
+    if (isCorrection) {
+      onSend(trimmed, replyTo?.id, false, replyTo?.id);
+    } else {
+      onSend(trimmed, replyTo?.id, isInternal);
+    }
     setText("");
     onClearReply?.();
     setSending(false);
-    
+
     if (onTyping) onTyping(false);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    
+
     textareaRef.current?.focus();
-  }, [text, sending, sessionExpired, isInternal, onSend, replyTo?.id, onClearReply, onTyping]);
+  }, [text, sending, sessionExpired, isInternal, isCorrection, onSend, replyTo?.id, onClearReply, onTyping]);
 
   const filteredCanned = cannedResponses.filter((c) =>
     c.shortcut.toLowerCase().includes(cannedFilter) || 
@@ -505,8 +526,16 @@ export function MessageComposer({
           <ReplyQuote
             authorLabel={replyTo.authorLabel}
             preview={replyTo.preview}
-            onDismiss={onClearReply}
+            onDismiss={() => {
+              if (isCorrection) setText("");
+              onClearReply?.();
+            }}
           />
+          {isCorrection && (
+            <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
+              WhatsApp doesn&apos;t allow editing a sent message. Your correction goes out as a new message quoting the original — the client will still see both.
+            </p>
+          )}
         </div>
       )}
 

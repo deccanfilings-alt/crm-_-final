@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
-import { Lock } from "lucide-react";
+import { Ban, EyeOff, Lock, PencilLine } from "lucide-react";
 
 interface MessageBubbleProps {
   message: Message;
@@ -33,6 +33,8 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /** Set when the message was hidden ("Delete for me"); only admins see these. */
+  hiddenByName?: string;
 }
 
 function formatErrorMessage(errorDetails?: Message["error_details"]): string {
@@ -679,9 +681,16 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  hiddenByName,
 }: MessageBubbleProps) {
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
+  const isRevoked = Boolean(message.revoked_at);
+  const metaTone = message.is_internal
+    ? "text-yellow-600/70 dark:text-yellow-400/70"
+    : isAgent
+      ? "text-primary-foreground/70"
+      : "text-muted-foreground";
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
@@ -690,8 +699,15 @@ export function MessageBubble({
       className={cn(
         "flex flex-col",
         isAgent ? "items-end" : "items-start",
+        hiddenByName && "opacity-50",
       )}
     >
+      {hiddenByName && (
+        <div className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+          <EyeOff className="h-3 w-3" />
+          Deleted for the team by {hiddenByName}
+        </div>
+      )}
       <div
         className={cn(
           "relative rounded-2xl px-3 py-2",
@@ -708,6 +724,12 @@ export function MessageBubble({
             Internal Note
           </div>
         )}
+        {message.correction_of_message_id && (
+          <div className={cn("mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide", metaTone)}>
+            <PencilLine className="h-3 w-3" />
+            Correction
+          </div>
+        )}
         {reply && (
           <ReplyQuote
             authorLabel={reply.authorLabel}
@@ -715,23 +737,34 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        <MessageContent message={message} />
+        {isRevoked ? (
+          <p className="flex items-center gap-1.5 text-sm italic text-muted-foreground">
+            <Ban className="h-3.5 w-3.5" />
+            The client deleted this message
+          </p>
+        ) : (
+          <MessageContent message={message} />
+        )}
         <div
           className={cn(
             "mt-1 flex items-center gap-1",
             isAgent ? "justify-end" : "justify-start",
           )}
         >
-          <span
-            className={cn(
-              "ml-2 text-[10px]",
-              message.is_internal
-                ? "text-yellow-600/70 dark:text-yellow-400/70"
-                : isAgent
-                  ? "text-primary-foreground/70"
-                  : "text-muted-foreground",
-            )}
-          >
+          {message.corrected_at && (
+            <span className={cn("text-[10px] italic", metaTone)} title="A correction was sent for this message">
+              Corrected
+            </span>
+          )}
+          {message.edited_at && !isRevoked && (
+            <span
+              className={cn("text-[10px] italic", metaTone)}
+              title={message.original_content_text ? `Original: ${message.original_content_text}` : "Edited by the client"}
+            >
+              Edited
+            </span>
+          )}
+          <span className={cn("ml-2 text-[10px]", metaTone)}>
             {time}
           </span>
           {isAgent && !message.is_internal && (

@@ -70,6 +70,63 @@ interface WhatsAppMessage {
   }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /**
+   * Client edited an earlier message (type === 'edit', within 15 min).
+   * Meta only sends this to numbers in Coexistence mode.
+   */
+  edit?: {
+    original_message_id: string
+    message?: {
+      type?: string
+      text?: { body?: string }
+      image?: { caption?: string }
+      video?: { caption?: string }
+      document?: { caption?: string }
+    }
+  }
+  /** Client deleted an earlier message for everyone (type === 'revoke', within 2 days). */
+  revoke?: { original_message_id: string }
+}
+
+/**
+ * Apply a client-side edit or delete to the stored original message.
+ * The edit/revoke event itself is not stored as a new message.
+ */
+async function handleEditOrRevoke(message: WhatsAppMessage, conversationId: string): Promise<void> {
+  const originalId =
+    message.type === 'edit' ? message.edit?.original_message_id : message.revoke?.original_message_id
+  if (!originalId) return
+
+  const { data: original } = await supabaseAdmin()
+    .from('messages')
+    .select('id, content_text, original_content_text')
+    .eq('message_id', originalId)
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .maybeSingle()
+  if (!original) {
+    console.warn(`[webhook] ${message.type} for unknown message ${originalId}`)
+    return
+  }
+
+  const at = new Date(parseInt(message.timestamp, 10) * 1000 || Date.now()).toISOString()
+  if (message.type === 'revoke') {
+    await supabaseAdmin().from('messages').update({ revoked_at: at }).eq('id', original.id)
+    return
+  }
+
+  const m = message.edit?.message
+  const newText = m?.text?.body ?? m?.image?.caption ?? m?.video?.caption ?? m?.document?.caption
+  if (newText === undefined) return
+  await supabaseAdmin()
+    .from('messages')
+    .update({
+      content_text: newText,
+      edited_at: at,
+      // Keep the very first version, even across several edits.
+      original_content_text: original.original_content_text ?? original.content_text,
+    })
+    .eq('id', original.id)
 }
 
 interface WhatsAppWebhookEntry {
@@ -638,6 +695,12 @@ async function processMessage(
   // Done before parseMessageContent so the media-URL fetch is skipped.
   if (message.type === 'reaction') {
     await handleReaction(message, conversation.id, contactRecord.id)
+    return
+  }
+
+  // Client edited or deleted an earlier message: update that row in place.
+  if (message.type === 'edit' || message.type === 'revoke') {
+    await handleEditOrRevoke(message, conversation.id)
     return
   }
 
