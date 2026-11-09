@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, Suspense, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   format,
   addDays,
@@ -52,6 +52,7 @@ import {
 import { TeamPlanner } from "@/components/tasks/team-planner";
 import { KpiProgressCards } from "@/components/tasks/kpi-progress-cards";
 import { TaskSheet } from "@/components/tasks/task-sheet";
+import { MemberTasksSheet } from "@/components/tasks/member-tasks-sheet";
 import type { ActionItem } from "@/components/tasks/types";
 import { todayIST } from "@/lib/dates";
 
@@ -86,7 +87,23 @@ interface PersonStats {
 function TeamActionItemsContent() {
   const { isOwner, isAdmin, user } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const taskParam = searchParams?.get("task");
+  // Member drill-down: ?member=<user_id> opens their full action-item history.
+  const memberParam = searchParams?.get("member") ?? null;
+  const [memberRefresh, setMemberRefresh] = useState(0);
+
+  const setMemberInUrl = useCallback(
+    (userId: string | null) => {
+      const sp = new URLSearchParams(searchParams?.toString() ?? "");
+      if (userId) sp.set("member", userId);
+      else sp.delete("member");
+      const qs = sp.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
 
   const [activeTab, setActiveTab] = useState("dashboard");
 
@@ -316,6 +333,7 @@ function TeamActionItemsContent() {
         : prev.map((item) => (item.id === updated.id ? updated : item))
     );
     setActiveTask(updated);
+    setMemberRefresh((n) => n + 1);
     if (activeTab === "dashboard") {
       fetchDashboardData();
     }
@@ -325,6 +343,7 @@ function TeamActionItemsContent() {
     setItems((prev) => prev.filter((item) => item.id !== id));
     setTeamOverdueTasks((prev) => prev.filter((item) => item.id !== id));
     setActiveTask(null);
+    setMemberRefresh((n) => n + 1);
     if (activeTab === "dashboard") {
       fetchDashboardData();
     }
@@ -481,7 +500,7 @@ function TeamActionItemsContent() {
               <CardHeader className="p-4 border-b flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="text-base font-semibold">Team Members Accountability</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Sorted by overdue count and on-time performance</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Sorted by overdue count and on-time performance · click a member to see all their action items</p>
                 </div>
               </CardHeader>
               <CardContent className="p-0">
@@ -517,7 +536,11 @@ function TeamActionItemsContent() {
                         const overdue = Number(person.overdue_count || 0);
 
                         return (
-                          <TableRow key={person.user_id} className="text-xs hover:bg-muted/40">
+                          <TableRow
+                            key={person.user_id}
+                            className="text-xs hover:bg-muted/40 cursor-pointer"
+                            onClick={() => setMemberInUrl(person.user_id)}
+                          >
                             <TableCell className="font-medium">
                               <div className="flex items-center gap-2">
                                 <Avatar className="h-6 w-6">
@@ -525,7 +548,17 @@ function TeamActionItemsContent() {
                                     {(person.full_name || "U").substring(0, 2).toUpperCase()}
                                   </AvatarFallback>
                                 </Avatar>
-                                <span>{person.full_name}</span>
+                                <button
+                                  type="button"
+                                  className="hover:underline text-left"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMemberInUrl(person.user_id);
+                                  }}
+                                  aria-label={`View all action items for ${person.full_name}`}
+                                >
+                                  {person.full_name}
+                                </button>
                                 {hasNoTasksToday && (
                                   <Badge variant="outline" className="text-[9px] h-4 px-1 text-muted-foreground border-dashed">
                                     No tasks today
@@ -846,6 +879,20 @@ function TeamActionItemsContent() {
             )}
           </>
         )}
+
+        <MemberTasksSheet
+          userId={memberParam}
+          fallbackName={stats.find((s) => s.user_id === memberParam)?.full_name}
+          open={Boolean(memberParam)}
+          onOpenChange={(o) => {
+            if (!o) setMemberInUrl(null);
+          }}
+          onOpenTask={(task) => {
+            setActiveTask(task);
+            setSheetOpen(true);
+          }}
+          refreshKey={memberRefresh}
+        />
 
         <TaskSheet
           task={activeTask}
