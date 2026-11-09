@@ -100,7 +100,7 @@ export async function POST(request: Request) {
 
     // Numbering resolution
     let invoiceNumber = body.invoice_number;
-    let nextNum = invoiceType === 'proforma' ? (settings.next_proforma_number || 1001) : (settings.next_tax_invoice_number || 1001);
+    const nextNum = invoiceType === 'proforma' ? (settings.next_proforma_number || 1001) : (settings.next_tax_invoice_number || 1001);
     const prefix = invoiceType === 'proforma' ? (settings.proforma_prefix || 'DF-PI-') : (settings.tax_invoice_prefix || 'DF-TI-');
 
     if (!invoiceNumber) {
@@ -171,12 +171,12 @@ export async function POST(request: Request) {
       signature_url: body.signature_url || settings.signature_url,
       stamp_url: body.stamp_url || settings.stamp_url,
 
-      bank_name: body.bank_name || settings.bank_name,
-      bank_account_no: body.bank_account_no || settings.bank_account_no,
-      bank_ifsc: body.bank_ifsc || settings.bank_ifsc,
-      bank_beneficiary_name: body.bank_beneficiary_name || settings.bank_beneficiary_name,
-      upi_id: body.upi_id || settings.upi_id,
-      upi_qr_url: body.upi_qr_url || settings.upi_qr_url,
+      bank_name: settings.bank_name,
+      bank_account_no: settings.bank_account_no,
+      bank_ifsc: settings.bank_ifsc,
+      bank_beneficiary_name: settings.bank_beneficiary_name,
+      upi_id: settings.upi_id,
+      upi_qr_url: settings.upi_qr_url,
 
       notes: body.notes || null,
       terms: body.terms || settings.default_terms || null,

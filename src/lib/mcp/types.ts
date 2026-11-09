@@ -1,5 +1,6 @@
 export interface MCPToolDefinition {
   name: string;
+  title?: string;
   description: string;
   inputSchema: {
     type: 'object';
@@ -11,6 +12,12 @@ export interface MCPToolDefinition {
       default?: any;
     }>;
     required?: string[];
+  };
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
   };
 }
 

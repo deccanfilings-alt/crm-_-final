@@ -9,6 +9,7 @@ export interface AgentAuthResult {
   key_id?: string;
   key_name?: string;
   scopes?: string[];
+  legacy_no_creator?: boolean;
   status?: number;
   error?: string;
 }
@@ -99,7 +100,7 @@ export async function authenticateAgentRequest(
 
     const { data: keyRecord, error } = await supabaseAdmin()
       .from('api_keys')
-      .select('id, account_id, name, scopes, is_active, expires_at')
+      .select('id, account_id, name, scopes, is_active, expires_at, created_by')
       .eq('key_hash', hashed)
       .maybeSingle();
 
@@ -125,9 +126,11 @@ export async function authenticateAgentRequest(
     return {
       success: true,
       account_id: keyRecord.account_id,
+      user_id: keyRecord.created_by ?? undefined,
       key_id: keyRecord.id,
       key_name: keyRecord.name,
       scopes: keyRecord.scopes || ['all'],
+      legacy_no_creator: !keyRecord.created_by,
     };
   }
 
@@ -153,6 +156,7 @@ export async function authenticateAgentRequest(
           user_id: user.id,
           scopes: ['all'],
           key_name: 'session',
+          legacy_no_creator: false,
         };
       }
     }

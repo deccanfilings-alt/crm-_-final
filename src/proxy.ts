@@ -33,11 +33,38 @@ export async function proxy(request: NextRequest) {
       }
     )
 
-    const { data } = await supabase.auth.getUser()
+    const { data, error } = await supabase.auth.getUser()
+    if (error) {
+      // If the refresh token is stale or expired, clear the cookies so the browser discards them
+      if (error.message?.includes('Refresh Token') || error.status === 400) {
+        request.cookies.getAll().forEach((c) => {
+          if (c.name.startsWith('sb-')) {
+            supabaseResponse.cookies.delete(c.name)
+          }
+        })
+      }
+    }
     user = data?.user ?? null
-  } catch (err) {
-    console.warn('[Middleware] Auth check bypassed:', err)
+  } catch (err: any) {
+    if (err?.message?.includes('Refresh Token') || err?.status === 400) {
+      request.cookies.getAll().forEach((c) => {
+        if (c.name.startsWith('sb-')) {
+          supabaseResponse.cookies.delete(c.name)
+        }
+      })
+    } else {
+      console.warn('[Middleware] Auth check bypassed:', err)
+    }
     user = null
+  }
+
+  // Helper to construct a redirect response that preserves cookie updates/deletions
+  const createRedirect = (targetUrl: URL) => {
+    const redirectResponse = NextResponse.redirect(targetUrl)
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie)
+    })
+    return redirectResponse
   }
 
   // Auth pages - redirect to dashboard if already logged in.
@@ -64,15 +91,29 @@ export async function proxy(request: NextRequest) {
       url.pathname = '/dashboard'
       url.search = ''
     }
-    return NextResponse.redirect(url)
+    return createRedirect(url)
   }
 
   // Protected pages - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings']
+  const protectedPaths = [
+    '/dashboard',
+    '/inbox',
+    '/contacts',
+    '/pipelines',
+    '/broadcasts',
+    '/automations',
+    '/settings',
+    '/action-items',
+    '/flows',
+    '/knowledge-bases',
+    '/quotations',
+    '/team-action-items',
+    '/team-chat'
+  ]
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    return createRedirect(url)
   }
 
   // Handle CORS preflight for agent endpoints (/api/mcp, /api/v1)
