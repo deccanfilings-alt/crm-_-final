@@ -93,13 +93,18 @@ export async function PATCH(
       }
 
       if (role === "owner") {
-        return NextResponse.json(
-          {
-            error:
-              "Use POST /api/account/transfer-ownership to promote a member to owner",
-          },
-          { status: 400 },
-        );
+        // Co-owners (migration 070): only an existing owner can add one.
+        if (ctx.role !== "owner") {
+          return NextResponse.json(
+            { error: "Only an owner can make someone a co-owner" },
+            { status: 403 },
+          );
+        }
+        const { error } = await ctx.supabase.rpc("make_co_owner", {
+          p_user_id: userId,
+        });
+        if (error) return rpcErrorToResponse(error);
+        return NextResponse.json({ ok: true });
       }
 
       const { error } = await ctx.supabase.rpc("set_member_role", {

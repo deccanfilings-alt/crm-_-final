@@ -29,6 +29,8 @@ import {
   Mail,
   MailX,
   Plus,
+  Crown,
+  LogOut,
   Trash2,
   UsersRound,
 } from 'lucide-react';
@@ -110,7 +112,15 @@ function fmtExpiresIn(iso: string): string {
 }
 
 export function MembersTab() {
-  const { user, canManageMembers } = useAuth();
+  const { user, canManageMembers, accountRole } = useAuth();
+  const iAmOwner = accountRole === 'owner';
+
+  // Co-owners (migration 070): owners can promote a member to co-owner;
+  // an owner can step down only while another owner remains.
+  const [ownerAction, setOwnerAction] = useState<
+    { kind: 'make-owner'; member: Member } | { kind: 'step-down' } | null
+  >(null);
+  const [ownerBusy, setOwnerBusy] = useState(false);
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -273,6 +283,42 @@ export function MembersTab() {
       setPendingMemberAction(null);
     }
   }
+
+  async function handleOwnerAction() {
+    if (!ownerAction) return;
+    setOwnerBusy(true);
+    try {
+      const res =
+        ownerAction.kind === 'make-owner'
+          ? await fetch(`/api/account/members/${ownerAction.member.user_id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ role: 'owner' }),
+            })
+          : await fetch('/api/account/step-down', { method: 'POST' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(payload.error || 'Something went wrong');
+        return;
+      }
+      if (ownerAction.kind === 'make-owner') {
+        toast.success(`${ownerAction.member.full_name || 'Member'} is now a co-owner`);
+        setOwnerAction(null);
+        await loadEverything();
+      } else {
+        toast.success('You are now a Team Leader (admin)');
+        // Your own role changed — reload so every screen picks it up.
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error('[MembersTab] owner action error:', err);
+      toast.error('Could not reach the server');
+    } finally {
+      setOwnerBusy(false);
+    }
+  }
+
+  const ownerCount = members.filter((m) => m.role === 'owner').length;
 
   async function handleRevoke(invite: Invitation) {
     try {
@@ -449,6 +495,32 @@ export function MembersTab() {
                         user moused over. Now red is the default
                         state with a darker shade on hover so the
                         affordance reads at-a-glance. */}
+                    {/* Co-owner controls (owners only). */}
+                    {iAmOwner && !isOwnerRow && !isSelf && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setOwnerAction({ kind: 'make-owner', member })}
+                        disabled={isBusy}
+                        title="Make co-owner"
+                        className="border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-300"
+                      >
+                        <Crown className="size-4" />
+                        <span className="hidden lg:inline">Make co-owner</span>
+                      </Button>
+                    )}
+                    {iAmOwner && isSelf && ownerCount > 1 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setOwnerAction({ kind: 'step-down' })}
+                        title="Step down as owner"
+                      >
+                        <LogOut className="size-4" />
+                        <span className="hidden lg:inline">Step down</span>
+                      </Button>
+                    )}
+
                     {canManageMembers && !isOwnerRow && !isSelf && (
                       <Button
                         variant="outline"
@@ -607,6 +679,56 @@ export function MembersTab() {
               ) : (
                 'Remove member'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={ownerAction !== null}
+        onOpenChange={(open) => {
+          if (!open && !ownerBusy) setOwnerAction(null);
+        }}
+      >
+        <DialogContent className="bg-popover border-border sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+              <Crown className="size-4 text-amber-400" />
+              {ownerAction?.kind === 'make-owner' ? 'Make co-owner' : 'Step down as owner'}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {ownerAction?.kind === 'make-owner' ? (
+                <>
+                  Make{' '}
+                  <span className="font-medium text-foreground">
+                    {ownerAction.member.full_name || ownerAction.member.email || 'this member'}
+                  </span>{' '}
+                  a co-owner? They get full owner rights, including bank and UPI
+                  details and team productivity. Only they can remove their own
+                  owner role, by stepping down.
+                </>
+              ) : (
+                <>
+                  You&apos;ll become a Team Leader (admin). The other owner
+                  {ownerCount > 2 ? 's keep' : ' keeps'} full control. You
+                  can&apos;t undo this yourself — an owner would need to make you
+                  a co-owner again.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="bg-popover border-border">
+            <Button
+              variant="outline"
+              onClick={() => setOwnerAction(null)}
+              disabled={ownerBusy}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleOwnerAction} disabled={ownerBusy}>
+              {ownerBusy && <Loader2 className="size-4 animate-spin" />}
+              {ownerAction?.kind === 'make-owner' ? 'Make co-owner' : 'Step down'}
             </Button>
           </DialogFooter>
         </DialogContent>
