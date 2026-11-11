@@ -16,6 +16,7 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Crown,
   GitBranch,
   LayoutDashboard,
@@ -107,6 +108,7 @@ const customizableNavItems: NavItem[] = [
   { href: "/automations", label: "Automations", icon: Zap },
   { href: "/flows", label: "Flows", icon: Bot },
   { href: "/team-action-items", label: "Team Action Items", icon: CheckSquare },
+  { href: "/attendance", label: "Attendance", icon: Clock },
   { href: "/knowledge-bases", label: "Knowledge", icon: BrainCircuit },
 ];
 

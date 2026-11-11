@@ -14,6 +14,7 @@ export const DEFAULT_CUSTOMIZABLE_HREFS = [
   "/automations",
   "/flows",
   "/team-action-items",
+  "/attendance",
   "/knowledge-bases",
 ];
 
