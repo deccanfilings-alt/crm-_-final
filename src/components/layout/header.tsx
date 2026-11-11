@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ModeToggle } from "@/components/layout/mode-toggle";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { TimeTrackerHeaderPill } from "@/components/wam/time-tracker";
 import { cn } from "@/lib/utils";
 
 const pageTitles: Record<string, string> = {
@@ -122,6 +123,9 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         </button>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* WAM: clock in / break / clock out */}
+          <TimeTrackerHeaderPill />
+
           {/* Prominent Quick Status Switcher */}
           <DropdownMenu>
             <DropdownMenuTrigger
