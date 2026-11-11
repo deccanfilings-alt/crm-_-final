@@ -39,8 +39,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { calculateQuotationTotals } from "@/lib/quotations/calculations";
+import { cn } from "@/lib/utils";
 import { uploadAccountMedia } from "@/lib/storage/upload-media";
-import type { Contact, Quotation } from "@/types";
+import type { Contact, Invoice, Quotation } from "@/types";
 
 interface FormItem {
   id?: string;
@@ -58,6 +59,9 @@ interface QuotationBuilderModalProps {
   initialConversationId?: string | null;
   quotationToEdit?: Quotation | null;
   onSuccess?: (quotation: Quotation) => void;
+  /** Edit an existing proforma or tax invoice with the same form. */
+  invoiceToEdit?: Invoice | null;
+  onInvoiceSaved?: (invoice: Invoice) => void;
 }
 
 export function QuotationBuilderModal({
@@ -67,9 +71,27 @@ export function QuotationBuilderModal({
   initialConversationId,
   quotationToEdit,
   onSuccess,
+  invoiceToEdit,
+  onInvoiceSaved,
 }: QuotationBuilderModalProps) {
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
+
+  // Which document is being edited (if any).
+  const isInvoice = Boolean(invoiceToEdit);
+  const editDoc: (Quotation | Invoice) | null = invoiceToEdit ?? quotationToEdit ?? null;
+  const docLabel = invoiceToEdit
+    ? invoiceToEdit.invoice_type === "tax_invoice"
+      ? "Tax Invoice"
+      : "Proforma Invoice"
+    : "Quotation";
+  const docNumber = invoiceToEdit?.invoice_number ?? quotationToEdit?.quote_number ?? "";
+  const wasSent = Boolean(
+    editDoc && (editDoc.status !== "draft" || (editDoc as { sent_at?: string | null }).sent_at),
+  );
+  const currentRevision = Number((editDoc as { revision?: number } | null)?.revision ?? 0);
+  const paidSoFar = Number(invoiceToEdit?.paid_amount ?? 0);
+  const [revisionReason, setRevisionReason] = useState("");
 
   // Dynamic Contact Search across entire database (5,500+ contacts)
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -251,53 +273,59 @@ export function QuotationBuilderModal({
   // Prefill or reset state on open
   useEffect(() => {
     if (!open) return;
+    setRevisionReason("");
 
-    if (quotationToEdit) {
-      setTitle(quotationToEdit.title || "");
-      setClientName(quotationToEdit.client_name || "");
-      setClientPhone(quotationToEdit.client_phone || "");
-      setClientEmail(quotationToEdit.client_email || "");
-      setClientCompany(quotationToEdit.client_company || "");
-      setClientAddress(quotationToEdit.client_address || "");
-      setClientGstin(quotationToEdit.client_gstin || "");
-      setIssueDate(quotationToEdit.issue_date || new Date().toISOString().split("T")[0]);
-      setValidUntil(quotationToEdit.valid_until || "");
-      setDiscountType(quotationToEdit.discount_type || "none");
-      setDiscountValue(quotationToEdit.discount_value || 0);
-      setTaxType(quotationToEdit.tax_type || "gst");
-      setTaxRate(quotationToEdit.tax_rate ?? 18.0);
-      setNotes(quotationToEdit.notes || "");
-      setTerms(quotationToEdit.terms || "");
+    if (editDoc) {
+      const doc = editDoc;
+      setTitle(doc.title || "");
+      setClientName(doc.client_name || "");
+      setClientPhone(doc.client_phone || "");
+      setClientEmail(doc.client_email || "");
+      setClientCompany(doc.client_company || "");
+      setClientAddress(doc.client_address || "");
+      setClientGstin(doc.client_gstin || "");
+      setIssueDate(doc.issue_date || new Date().toISOString().split("T")[0]);
+      // Quotations have "valid until"; invoices have a due date.
+      setValidUntil(
+        (invoiceToEdit ? invoiceToEdit.due_date : quotationToEdit?.valid_until) || "",
+      );
+      setDiscountType(doc.discount_type || "none");
+      setDiscountValue(doc.discount_value || 0);
+      setTaxType(doc.tax_type || "gst");
+      setTaxRate(doc.tax_rate ?? 18.0);
+      setNotes(doc.notes || "");
+      setTerms(doc.terms || "");
 
       // Dynamic Company & Signature Overrides
-      setCompanyName(quotationToEdit.company_name || "Deccan Filings");
-      setCompanyLogoUrl(quotationToEdit.company_logo_url || "");
-      setCompanyAddress(quotationToEdit.company_address || "");
-      setCompanyPhone(quotationToEdit.company_phone || "");
-      setCompanyEmail(quotationToEdit.company_email || "");
-      setCompanyWebsite(quotationToEdit.company_website || "");
-      setCompanyGstin(quotationToEdit.gstin || "");
-      setCompanyPan(quotationToEdit.pan || "");
-      setSignatureUrl(quotationToEdit.signature_url || "");
-      setStampUrl(quotationToEdit.stamp_url || "");
+      setCompanyName(doc.company_name || "Deccan Filings");
+      setCompanyLogoUrl(doc.company_logo_url || "");
+      setCompanyAddress(doc.company_address || "");
+      setCompanyPhone(doc.company_phone || "");
+      setCompanyEmail(doc.company_email || "");
+      setCompanyWebsite(doc.company_website || "");
+      setCompanyGstin(doc.gstin || "");
+      setCompanyPan(doc.pan || "");
+      setSignatureUrl(doc.signature_url || "");
+      setStampUrl(doc.stamp_url || "");
 
-      if (quotationToEdit.custom_message) {
-        setCustomMessage(quotationToEdit.custom_message);
+      if (doc.custom_message) {
+        setCustomMessage(doc.custom_message);
         setIsMessageEdited(true);
       }
 
-      // If quotation has custom company/signature, auto-open customization
+      // If the document has custom company/signature, auto-open customization
       if (
-        (quotationToEdit.company_name && quotationToEdit.company_name !== "Deccan Filings") ||
-        quotationToEdit.signature_url ||
-        quotationToEdit.stamp_url
+        (doc.company_name && doc.company_name !== "Deccan Filings") ||
+        doc.signature_url ||
+        doc.stamp_url
       ) {
         setShowEntityDetails(true);
       }
 
-      if (quotationToEdit.items && quotationToEdit.items.length > 0) {
+      const docItems = (doc as { items?: Array<{ id: string; title: string; description?: string | null; quantity: number; unit_price: number; total: number; position?: number }> }).items;
+      if (docItems && docItems.length > 0) {
         setItems(
-          quotationToEdit.items.map((it) => ({
+          [...docItems].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)).map((it) => ({
             id: it.id,
             title: it.title,
             description: it.description || "",
@@ -373,7 +401,8 @@ export function QuotationBuilderModal({
         },
       ]);
     }
-  }, [open, quotationToEdit, initialContact]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, quotationToEdit, invoiceToEdit, initialContact]);
 
   // Handle Contact Pick
   const handleSelectContact = (c: Contact) => {
@@ -425,7 +454,13 @@ export function QuotationBuilderModal({
   // Submit Handler
   const handleSaveQuotation = async (sendAfterSave = false) => {
     if (!title.trim()) {
-      toast.error("Please enter a quotation title / subject.");
+      toast.error(`Please enter a ${docLabel.toLowerCase()} title / subject.`);
+      return;
+    }
+    if (isInvoice && paidSoFar > 0 && totals.totalAmount + 0.005 < paidSoFar) {
+      toast.error(
+        `The new total (₹${totals.totalAmount.toFixed(2)}) is less than the ₹${paidSoFar.toFixed(2)} already paid.`,
+      );
       return;
     }
     if (!clientName.trim()) {
@@ -484,13 +519,48 @@ export function QuotationBuilderModal({
         })),
       };
 
+      // ---- Editing a proforma / tax invoice ----
+      if (invoiceToEdit) {
+        const { valid_until: dueDate, contact_id: _c, conversation_id: _cv, ...rest } = payload;
+        const invRes = await fetch(`/api/invoices/${invoiceToEdit.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...rest,
+            due_date: dueDate,
+            revision_reason: revisionReason.trim() || null,
+          }),
+        });
+        const invData = await invRes.json().catch(() => ({}));
+        if (!invRes.ok) throw new Error(invData.error || `Failed to update ${docLabel.toLowerCase()}`);
+
+        if (sendAfterSave) {
+          toast.info(`Sending updated ${docLabel.toLowerCase()} via WhatsApp...`);
+          const sendRes = await fetch(`/api/invoices/${invoiceToEdit.id}/send-whatsapp`, { method: "POST" });
+          const sendData = await sendRes.json().catch(() => ({}));
+          if (!sendRes.ok) throw new Error(sendData.error || `${docLabel} saved, but WhatsApp delivery failed`);
+          toast.success(`${docLabel} updated & re-sent on WhatsApp`);
+        } else {
+          toast.success(
+            invData.revision
+              ? `${docLabel} updated — now Rev ${invData.revision}`
+              : `${docLabel} updated`,
+          );
+        }
+        onInvoiceSaved?.(invData.invoice);
+        onOpenChange(false);
+        return;
+      }
+
       const url = quotationToEdit ? `/api/quotations/${quotationToEdit.id}` : "/api/quotations";
       const method = quotationToEdit ? "PATCH" : "POST";
 
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(
+          quotationToEdit ? { ...payload, revision_reason: revisionReason.trim() || null } : payload,
+        ),
       });
 
       const data = await res.json();
@@ -499,6 +569,16 @@ export function QuotationBuilderModal({
       }
 
       const savedQuote = data.quotation;
+      if (quotationToEdit && !sendAfterSave) {
+        if (data.reopened) {
+          toast.info("Prices changed, so the quotation is back to “Sent” — the client needs to accept it again.");
+        }
+        if (data.linked_invoices > 0) {
+          toast.info(
+            `${data.linked_invoices} invoice(s) were already raised from this quotation. They are not changed — edit them separately if needed.`,
+          );
+        }
+      }
 
       if (sendAfterSave && savedQuote?.id) {
         toast.info("Sending quotation via WhatsApp...");
@@ -514,7 +594,11 @@ export function QuotationBuilderModal({
         toast.success("Quotation saved & dispatched via WhatsApp!");
       } else {
         toast.success(
-          quotationToEdit ? "Quotation updated successfully!" : "Quotation created successfully!"
+          quotationToEdit
+            ? data.revision
+              ? `Quotation updated — now Rev ${data.revision}`
+              : "Quotation updated successfully!"
+            : "Quotation created successfully!"
         );
       }
 
@@ -540,18 +624,19 @@ export function QuotationBuilderModal({
               </div>
               <div>
                 <DialogTitle className="text-lg sm:text-xl font-bold">
-                  {quotationToEdit
-                    ? `Edit Quotation ${quotationToEdit.quote_number}`
-                    : "Create New Quotation"}
+                  {editDoc ? `Edit ${docLabel} ${docNumber}` : "Create New Quotation"}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Prepare a formal, itemized quotation with GST, client details, and WhatsApp cover message.
+                  {editDoc
+                    ? `Change items, prices, discount, tax, client or dates.${wasSent ? " The client's link will show the updated version." : ""}`
+                    : "Prepare a formal, itemized quotation with GST, client details, and WhatsApp cover message."}
                 </DialogDescription>
               </div>
             </div>
-            {quotationToEdit && (
+            {editDoc && (
               <span className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary font-semibold">
-                {quotationToEdit.quote_number}
+                {docNumber}
+                {currentRevision > 0 ? ` · Rev ${currentRevision}` : ""}
               </span>
             )}
           </div>
@@ -560,11 +645,44 @@ export function QuotationBuilderModal({
         {/* Scrollable Content */}
         <ScrollArea className="flex-1 p-4 sm:p-6 overflow-y-auto">
           <div className="space-y-6">
+            {/* Editing a document the client already has */}
+            {editDoc && wasSent && (
+              <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                <p className="font-medium text-foreground">
+                  This {docLabel.toLowerCase()} was already sent. Saving creates{" "}
+                  <span className="font-semibold">Rev {currentRevision + 1}</span>; the previous version is kept in the history.
+                </p>
+                <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
+                  <li>The client&apos;s link and PDF show the updated version. Use “Save &amp; Resend” to send it to them on WhatsApp.</li>
+                  {!isInvoice && quotationToEdit?.status === "accepted" && (
+                    <li>It was accepted. If you change items, prices, discount or tax it goes back to “Sent” and the client must accept again.</li>
+                  )}
+                  {isInvoice && paidSoFar > 0 && (
+                    <li>
+                      ₹{paidSoFar.toLocaleString("en-IN", { minimumFractionDigits: 2 })} is already paid. The new total can&apos;t be lower than that; the balance and paid status update automatically.
+                    </li>
+                  )}
+                  {invoiceToEdit?.invoice_type === "tax_invoice" && (
+                    <li className="text-amber-700 dark:text-amber-300">
+                      GST: correcting an issued tax invoice should usually be done with a credit/debit note. Edit only if you haven&apos;t filed it in your GST returns yet.
+                    </li>
+                  )}
+                </ul>
+                <Input
+                  value={revisionReason}
+                  onChange={(e) => setRevisionReason(e.target.value)}
+                  placeholder="What changed? e.g. Client asked to remove trademark filing (optional)"
+                  maxLength={300}
+                  className="h-8 text-xs"
+                />
+              </div>
+            )}
+
             {/* Top Row: Title & Dates (Spacious & Responsive) */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4">
               <div className="md:col-span-6 space-y-1.5">
                 <Label htmlFor="quote_title" className="text-xs font-semibold">
-                  Quotation Subject / Service Title *
+                  {docLabel} Subject / Service Title *
                 </Label>
                 <Input
                   id="quote_title"
@@ -588,7 +706,7 @@ export function QuotationBuilderModal({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="valid_until" className="text-xs font-medium">Valid Until</Label>
+                  <Label htmlFor="valid_until" className="text-xs font-medium">{isInvoice ? "Due Date" : "Valid Until"}</Label>
                   <Input
                     id="valid_until"
                     type="date"
@@ -1020,7 +1138,7 @@ export function QuotationBuilderModal({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Label className="text-sm font-bold">Quotation Line Items</Label>
+                  <Label className="text-sm font-bold">{docLabel} Line Items</Label>
                   <span className="text-xs text-muted-foreground">({items.length} items)</span>
                 </div>
                 <Button
@@ -1238,8 +1356,9 @@ export function QuotationBuilderModal({
               </div>
             </div>
 
-            {/* WhatsApp Accompanying Message & Preview (The Message Space) */}
-            <div className="rounded-xl border bg-card p-4 sm:p-5 space-y-3">
+            {/* WhatsApp Accompanying Message & Preview (The Message Space).
+                Quotations only — invoices are sent with their own standard message. */}
+            <div className={cn("rounded-xl border bg-card p-4 sm:p-5 space-y-3", isInvoice && "hidden")}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2.5">
                 <div className="flex items-center gap-2">
                   <MessageSquare className="h-4 w-4 text-emerald-600" />
@@ -1332,7 +1451,7 @@ export function QuotationBuilderModal({
 
             {/* Terms and Conditions Accordion/Block */}
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Quotation Terms & Conditions</Label>
+              <Label className="text-xs font-semibold">{docLabel} Terms & Conditions</Label>
               <Textarea
                 className="text-xs font-mono"
                 rows={3}
@@ -1368,6 +1487,8 @@ export function QuotationBuilderModal({
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Saving...
                 </>
+              ) : editDoc ? (
+                "Save changes"
               ) : (
                 "Save as Draft"
               )}
@@ -1387,7 +1508,7 @@ export function QuotationBuilderModal({
               ) : (
                 <>
                   <Send className="h-4 w-4" />
-                  Save & Send on WhatsApp
+                  {editDoc && wasSent ? "Save & Resend on WhatsApp" : "Save & Send on WhatsApp"}
                 </>
               )}
             </Button>

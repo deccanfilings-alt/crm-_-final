@@ -121,7 +121,7 @@ export function renderQuotationHtml(quote: Quotation, settings: QuotationSetting
           <table style="width: auto; font-size: 13px;">
             <tr>
               <td style="padding: 2px 0; font-weight: 600; color: #374151; width: 75px;">Bill No:</td>
-              <td style="padding: 2px 0; font-weight: 700; color: #111827;">${escapeHtml(quote.quote_number)}</td>
+              <td style="padding: 2px 0; font-weight: 700; color: #111827;">${escapeHtml(quote.quote_number)}${Number((quote as { revision?: number }).revision) > 0 ? ` <span style="font-weight: 600; color: #b45309;">(Rev ${Number((quote as { revision?: number }).revision)})</span>` : ''}</td>
             </tr>
             <tr>
               <td style="padding: 2px 0; font-weight: 600; color: #374151;">Bill Date:</td>

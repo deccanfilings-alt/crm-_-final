@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { calculateQuotationTotals } from '@/lib/quotations/calculations';
+import { isCommercialChange, recordRevision, shouldBumpRevision } from '@/lib/billing/revisions';
 
 export async function GET(
   request: Request,
@@ -74,7 +75,7 @@ export async function PATCH(
     // Check existing quotation
     const { data: existing, error: fetchErr } = await supabase
       .from('quotations')
-      .select('*')
+      .select('*, items:quotation_items(*)')
       .eq('id', id)
       .eq('account_id', profile.account_id)
       .single();
@@ -111,12 +112,15 @@ export async function PATCH(
       pan,
       signature_url,
       stamp_url,
+      issue_date,
+      revision_reason,
     } = body;
 
     const updates: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
 
+    if (issue_date !== undefined && issue_date) updates.issue_date = issue_date;
     if (title !== undefined) updates.title = title.trim();
     if (client_name !== undefined) updates.client_name = client_name.trim();
     if (client_phone !== undefined) updates.client_phone = client_phone?.trim() || null;
@@ -138,6 +142,24 @@ export async function PATCH(
     if (pan !== undefined) updates.pan = pan?.trim() || null;
     if (signature_url !== undefined) updates.signature_url = signature_url?.trim() || null;
     if (stamp_url !== undefined) updates.stamp_url = stamp_url?.trim() || null;
+
+    // A client accepted/rejected different terms — once prices or items
+    // change, the quote is back with the client ("sent") until they
+    // respond again. An expired quote whose validity is extended is live
+    // again too.
+    const commercial = isCommercialChange(existing, { items, discount_type, discount_value, tax_type, tax_rate });
+    if (commercial && (existing.status === 'accepted' || existing.status === 'rejected')) {
+      updates.status = 'sent';
+      updates.accepted_at = null;
+      updates.rejected_at = null;
+    }
+    if (
+      existing.status === 'expired' &&
+      typeof valid_until === 'string' &&
+      valid_until >= new Date().toISOString().slice(0, 10)
+    ) {
+      updates.status = 'sent';
+    }
 
     if (Array.isArray(items)) {
       const totals = calculateQuotationTotals({
@@ -186,7 +208,33 @@ export async function PATCH(
       return NextResponse.json({ error: updateErr.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, quotation: updated });
+    // Sent quotes get a revision number + a snapshot of the old version.
+    let revision: number | null = null;
+    if (shouldBumpRevision(existing.status, existing.sent_at)) {
+      revision = await recordRevision(supabase, {
+        table: 'quotations',
+        documentType: 'quotation',
+        before: existing,
+        userId: user.id,
+        reason: typeof revision_reason === 'string' ? revision_reason : null,
+      });
+      if (revision !== null && updated) updated.revision = revision;
+    }
+
+    // Invoices already raised from this quote are separate documents and
+    // are NOT changed by this edit — tell the UI so it can say so.
+    const { count: linkedInvoices } = await supabase
+      .from('invoices')
+      .select('id', { count: 'exact', head: true })
+      .eq('quotation_id', id);
+
+    return NextResponse.json({
+      success: true,
+      quotation: updated,
+      revision,
+      reopened: updates.status === 'sent' && existing.status !== 'sent',
+      linked_invoices: linkedInvoices ?? 0,
+    });
   } catch (err: any) {
     console.error('[api/quotations/[id]] PATCH error:', err);
     return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });

@@ -134,7 +134,7 @@ export function renderInvoiceHtml(invoice: Invoice, settings: QuotationSettings)
           <table style="width: auto; font-size: 13px;">
             <tr>
               <td style="padding: 2px 0; font-weight: 600; color: #374151; width: 95px;">Invoice No:</td>
-              <td style="padding: 2px 0; font-weight: 700; color: #111827;">${escapeHtml(invoice.invoice_number)}</td>
+              <td style="padding: 2px 0; font-weight: 700; color: #111827;">${escapeHtml(invoice.invoice_number)}${Number((invoice as { revision?: number }).revision) > 0 ? ` <span style="font-weight: 600; color: #b45309;">(Rev ${Number((invoice as { revision?: number }).revision)})</span>` : ''}</td>
             </tr>
             <tr>
               <td style="padding: 2px 0; font-weight: 600; color: #374151;">Invoice Date:</td>

@@ -49,6 +49,14 @@ export default function QuotationsPage() {
   // Modals state
   const [builderOpen, setBuilderOpen] = useState(false);
   const [quoteToEdit, setQuoteToEdit] = useState<Quotation | null>(null);
+  const [invoiceToEdit, setInvoiceToEdit] = useState<Invoice | null>(null);
+
+  // Edit a proforma / tax invoice in the same builder form.
+  const openInvoiceEditor = (inv: Invoice) => {
+    setQuoteToEdit(null);
+    setInvoiceToEdit(inv);
+    setBuilderOpen(true);
+  };
 
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [quoteToConvert, setQuoteToConvert] = useState<Quotation | null>(null);
@@ -391,6 +399,7 @@ export default function QuotationsPage() {
                   <tr key={q.id} className="hover:bg-muted/30 transition-colors">
                     <td className="p-3 font-mono font-bold text-foreground">
                       {q.quote_number}
+                      <RevisionTag revision={(q as { revision?: number }).revision} />
                     </td>
                     <td className="p-3">
                       <div className="font-semibold text-foreground">{q.title}</div>
@@ -503,6 +512,7 @@ export default function QuotationsPage() {
                   <tr key={inv.id} className="hover:bg-muted/30 transition-colors">
                     <td className="p-3 font-mono font-bold text-amber-700">
                       {inv.invoice_number}
+                      <RevisionTag revision={(inv as { revision?: number }).revision} />
                     </td>
                     <td className="p-3">
                       <div className="font-semibold text-foreground">{inv.title}</div>
@@ -560,6 +570,14 @@ export default function QuotationsPage() {
                             <DropdownMenuItem onClick={() => handleCopyInvoiceLink(inv)}>
                               <Copy className="mr-2 h-3.5 w-3.5" /> Copy Client Link
                             </DropdownMenuItem>
+                            {inv.status !== "cancelled" && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => openInvoiceEditor(inv)}>
+                                  <Edit className="mr-2 h-3.5 w-3.5" /> Edit Proforma
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -599,6 +617,7 @@ export default function QuotationsPage() {
                   <tr key={inv.id} className="hover:bg-muted/30 transition-colors">
                     <td className="p-3 font-mono font-bold text-emerald-700">
                       {inv.invoice_number}
+                      <RevisionTag revision={(inv as { revision?: number }).revision} />
                     </td>
                     <td className="p-3">
                       <div className="font-semibold text-foreground">{inv.title}</div>
@@ -660,6 +679,14 @@ export default function QuotationsPage() {
                             <DropdownMenuItem onClick={() => handleCopyInvoiceLink(inv)}>
                               <Copy className="mr-2 h-3.5 w-3.5" /> Copy Receipt Link
                             </DropdownMenuItem>
+                            {inv.status !== "cancelled" && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => openInvoiceEditor(inv)}>
+                                  <Edit className="mr-2 h-3.5 w-3.5" /> Edit Tax Invoice
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -675,11 +702,19 @@ export default function QuotationsPage() {
       {/* MODALS */}
       <QuotationBuilderModal
         open={builderOpen}
-        onOpenChange={setBuilderOpen}
-        quotationToEdit={quoteToEdit}
+        onOpenChange={(o) => {
+          setBuilderOpen(o);
+          if (!o) setInvoiceToEdit(null);
+        }}
+        quotationToEdit={invoiceToEdit ? null : quoteToEdit}
+        invoiceToEdit={invoiceToEdit}
         onSuccess={() => {
           fetchData();
           setQuoteToEdit(null);
+        }}
+        onInvoiceSaved={() => {
+          fetchData();
+          setInvoiceToEdit(null);
         }}
       />
 
@@ -703,5 +738,18 @@ export default function QuotationsPage() {
         }}
       />
     </div>
+  );
+}
+
+/** "Rev 2" tag for documents edited after they were sent. */
+function RevisionTag({ revision }: { revision?: number | null }) {
+  if (!revision || revision < 1) return null;
+  return (
+    <span
+      className="ml-1.5 inline-block rounded bg-amber-500/15 px-1 py-0.5 align-middle font-sans text-[9px] font-semibold text-amber-700 dark:text-amber-300"
+      title={`Edited ${revision} time${revision === 1 ? "" : "s"} after sending`}
+    >
+      Rev {revision}
+    </span>
   );
 }
