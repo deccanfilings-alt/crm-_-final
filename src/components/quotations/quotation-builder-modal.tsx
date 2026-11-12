@@ -62,7 +62,17 @@ interface QuotationBuilderModalProps {
   /** Edit an existing proforma or tax invoice with the same form. */
   invoiceToEdit?: Invoice | null;
   onInvoiceSaved?: (invoice: Invoice) => void;
+  /** Create a new proforma / tax invoice directly — no quotation needed. */
+  newInvoiceType?: "proforma" | "tax_invoice" | null;
 }
+
+const PAYMENT_METHODS: Array<{ value: string; label: string }> = [
+  { value: "upi", label: "UPI" },
+  { value: "bank_transfer", label: "Bank transfer (IMPS / NEFT / RTGS)" },
+  { value: "card", label: "Card" },
+  { value: "cheque", label: "Cheque" },
+  { value: "cash", label: "Cash" },
+];
 
 export function QuotationBuilderModal({
   open,
@@ -73,18 +83,18 @@ export function QuotationBuilderModal({
   onSuccess,
   invoiceToEdit,
   onInvoiceSaved,
+  newInvoiceType = null,
 }: QuotationBuilderModalProps) {
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
 
   // Which document is being edited (if any).
-  const isInvoice = Boolean(invoiceToEdit);
   const editDoc: (Quotation | Invoice) | null = invoiceToEdit ?? quotationToEdit ?? null;
-  const docLabel = invoiceToEdit
-    ? invoiceToEdit.invoice_type === "tax_invoice"
-      ? "Tax Invoice"
-      : "Proforma Invoice"
-    : "Quotation";
+  // Creating a proforma / tax invoice directly (standalone, no quotation).
+  const createInvoiceType = !editDoc ? newInvoiceType : null;
+  const isInvoice = Boolean(invoiceToEdit || createInvoiceType);
+  const invoiceType = invoiceToEdit?.invoice_type ?? createInvoiceType;
+  const docLabel = isInvoice ? (invoiceType === "tax_invoice" ? "Tax Invoice" : "Proforma Invoice") : "Quotation";
   const docNumber = invoiceToEdit?.invoice_number ?? quotationToEdit?.quote_number ?? "";
   const wasSent = Boolean(
     editDoc && (editDoc.status !== "draft" || (editDoc as { sent_at?: string | null }).sent_at),
@@ -92,6 +102,11 @@ export function QuotationBuilderModal({
   const currentRevision = Number((editDoc as { revision?: number } | null)?.revision ?? 0);
   const paidSoFar = Number(invoiceToEdit?.paid_amount ?? 0);
   const [revisionReason, setRevisionReason] = useState("");
+  // New tax invoice only: was the payment already received?
+  const [paymentReceived, setPaymentReceived] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState("upi");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paidOn, setPaidOn] = useState(new Date().toISOString().split("T")[0]);
 
   // Dynamic Contact Search across entire database (5,500+ contacts)
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -274,6 +289,10 @@ export function QuotationBuilderModal({
   useEffect(() => {
     if (!open) return;
     setRevisionReason("");
+    setPaymentReceived(true);
+    setPaymentMethod("upi");
+    setPaymentReference("");
+    setPaidOn(new Date().toISOString().split("T")[0]);
 
     if (editDoc) {
       const doc = editDoc;
@@ -358,8 +377,9 @@ export function QuotationBuilderModal({
       setTitle("");
       setIssueDate(new Date().toISOString().split("T")[0]);
       const d = new Date();
-      d.setDate(d.getDate() + 15);
-      setValidUntil(d.toISOString().split("T")[0]);
+      d.setDate(d.getDate() + (newInvoiceType ? 7 : 15));
+      // A paid tax invoice has no due date.
+      setValidUntil(newInvoiceType === "tax_invoice" ? "" : d.toISOString().split("T")[0]);
 
       setDiscountType("none");
       setDiscountValue(0);
@@ -402,7 +422,7 @@ export function QuotationBuilderModal({
       ]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, quotationToEdit, invoiceToEdit, initialContact]);
+  }, [open, quotationToEdit, invoiceToEdit, initialContact, newInvoiceType]);
 
   // Handle Contact Pick
   const handleSelectContact = (c: Contact) => {
@@ -552,6 +572,45 @@ export function QuotationBuilderModal({
         return;
       }
 
+      // ---- Creating a proforma / tax invoice directly ----
+      if (createInvoiceType) {
+        const { valid_until: dueDate, ...rest } = payload;
+        const isPaidTax = createInvoiceType === "tax_invoice" && paymentReceived;
+        const createRes = await fetch("/api/invoices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...rest,
+            invoice_type: createInvoiceType,
+            due_date: isPaidTax ? null : dueDate,
+            payment_received: createInvoiceType === "tax_invoice" ? paymentReceived : false,
+            ...(isPaidTax
+              ? {
+                  payment_method: paymentMethod,
+                  payment_reference: paymentReference.trim() || null,
+                  paid_at: paidOn ? new Date(`${paidOn}T12:00:00+05:30`).toISOString() : null,
+                }
+              : {}),
+          }),
+        });
+        const created = await createRes.json().catch(() => ({}));
+        if (!createRes.ok) throw new Error(created.error || `Failed to create ${docLabel.toLowerCase()}`);
+        const inv = created.invoice as Invoice;
+
+        if (sendAfterSave && inv?.id) {
+          toast.info(`Sending ${docLabel.toLowerCase()} via WhatsApp...`);
+          const sendRes = await fetch(`/api/invoices/${inv.id}/send-whatsapp`, { method: "POST" });
+          const sendData = await sendRes.json().catch(() => ({}));
+          if (!sendRes.ok) throw new Error(sendData.error || `${docLabel} created, but WhatsApp delivery failed`);
+          toast.success(`${docLabel} ${inv.invoice_number} created & sent on WhatsApp`);
+        } else {
+          toast.success(`${docLabel} ${inv?.invoice_number ?? ""} created`);
+        }
+        onInvoiceSaved?.(inv);
+        onOpenChange(false);
+        return;
+      }
+
       const url = quotationToEdit ? `/api/quotations/${quotationToEdit.id}` : "/api/quotations";
       const method = quotationToEdit ? "PATCH" : "POST";
 
@@ -624,12 +683,16 @@ export function QuotationBuilderModal({
               </div>
               <div>
                 <DialogTitle className="text-lg sm:text-xl font-bold">
-                  {editDoc ? `Edit ${docLabel} ${docNumber}` : "Create New Quotation"}
+                  {editDoc ? `Edit ${docLabel} ${docNumber}` : `Create New ${docLabel}`}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                   {editDoc
                     ? `Change items, prices, discount, tax, client or dates.${wasSent ? " The client's link will show the updated version." : ""}`
-                    : "Prepare a formal, itemized quotation with GST, client details, and WhatsApp cover message."}
+                    : createInvoiceType === "proforma"
+                      ? "A proforma invoice on its own — no quotation needed. Includes your bank details & UPI QR so the client can pay."
+                      : createInvoiceType === "tax_invoice"
+                        ? "A GST tax invoice on its own — no quotation or proforma needed."
+                        : "Prepare a formal, itemized quotation with GST, client details, and WhatsApp cover message."}
                 </DialogDescription>
               </div>
             </div>
@@ -678,6 +741,56 @@ export function QuotationBuilderModal({
               </div>
             )}
 
+            {/* New tax invoice: payment details */}
+            {createInvoiceType === "tax_invoice" && (
+              <div className="space-y-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 sm:p-4">
+                <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={paymentReceived}
+                    onChange={(e) => setPaymentReceived(e.target.checked)}
+                    className="h-4 w-4 accent-emerald-600"
+                  />
+                  Payment already received (invoice is marked PAID)
+                </label>
+                {paymentReceived ? (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pay_method" className="text-xs font-medium">Payment method</Label>
+                      <select
+                        id="pay_method"
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value)}
+                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
+                      >
+                        {PAYMENT_METHODS.map((m) => (
+                          <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="pay_ref" className="text-xs font-medium">UTR / reference</Label>
+                      <Input
+                        id="pay_ref"
+                        value={paymentReference}
+                        onChange={(e) => setPaymentReference(e.target.value)}
+                        placeholder="e.g. 412345678901"
+                        className="h-9 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="paid_on" className="text-xs font-medium">Paid on</Label>
+                      <Input id="paid_on" type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} className="h-9 text-xs" />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    It will be saved as <span className="font-semibold">Unpaid</span> with a due date. Use “Record Payment” on it when the money comes in.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Top Row: Title & Dates (Spacious & Responsive) */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4">
               <div className="md:col-span-6 space-y-1.5">
@@ -705,7 +818,7 @@ export function QuotationBuilderModal({
                     className="h-9 text-xs"
                   />
                 </div>
-                <div className="space-y-1.5">
+                <div className={cn("space-y-1.5", createInvoiceType === "tax_invoice" && paymentReceived && "invisible")}>
                   <Label htmlFor="valid_until" className="text-xs font-medium">{isInvoice ? "Due Date" : "Valid Until"}</Label>
                   <Input
                     id="valid_until"
@@ -1489,6 +1602,8 @@ export function QuotationBuilderModal({
                 </>
               ) : editDoc ? (
                 "Save changes"
+              ) : createInvoiceType ? (
+                `Create ${docLabel}`
               ) : (
                 "Save as Draft"
               )}
@@ -1508,7 +1623,11 @@ export function QuotationBuilderModal({
               ) : (
                 <>
                   <Send className="h-4 w-4" />
-                  {editDoc && wasSent ? "Save & Resend on WhatsApp" : "Save & Send on WhatsApp"}
+                  {editDoc && wasSent
+                    ? "Save & Resend on WhatsApp"
+                    : createInvoiceType
+                      ? "Create & Send on WhatsApp"
+                      : "Save & Send on WhatsApp"}
                 </>
               )}
             </Button>

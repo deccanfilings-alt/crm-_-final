@@ -86,16 +86,28 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('account_id')
+      .select('account_id, account_role')
       .eq('user_id', user.id)
       .maybeSingle();
 
     if (!profile?.account_id) {
       return NextResponse.json({ error: 'Profile not linked to an account' }, { status: 403 });
     }
+    if (profile.account_role === 'viewer') {
+      return NextResponse.json({ error: 'Viewers cannot create invoices' }, { status: 403 });
+    }
 
     const body = await request.json();
+    if (body.invoice_type && body.invoice_type !== 'proforma' && body.invoice_type !== 'tax_invoice') {
+      return NextResponse.json({ error: 'invoice_type must be proforma or tax_invoice' }, { status: 400 });
+    }
     const invoiceType = (body.invoice_type || 'proforma') as 'proforma' | 'tax_invoice';
+    if (typeof body.client_name !== 'string' || !body.client_name.trim()) {
+      return NextResponse.json({ error: 'Client name is required' }, { status: 400 });
+    }
+    if (!Array.isArray(body.items) || body.items.length === 0 || body.items.some((it: any) => !String(it?.title ?? '').trim())) {
+      return NextResponse.json({ error: 'Add at least one line item, each with a title' }, { status: 400 });
+    }
     const settings = await getQuotationSettings(supabase, profile.account_id);
 
     // Numbering resolution
@@ -116,9 +128,15 @@ export async function POST(request: Request) {
       taxRate: body.tax_rate !== undefined ? Number(body.tax_rate) : (settings.default_tax_rate || 18),
     });
 
-    const isPaid = body.status === 'paid' || invoiceType === 'tax_invoice';
-    const paidAmount = isPaid ? (Number(body.paid_amount) || calculated.totalAmount) : (Number(body.paid_amount) || 0);
-    const balanceAmount = Math.max(0, calculated.totalAmount - paidAmount);
+    // A tax invoice is normally raised after payment, so it defaults to paid.
+    // Created directly (no quotation/proforma) it may be raised before payment:
+    // payment_received: false keeps it unpaid.
+    const isPaid = body.status === 'paid' || (invoiceType === 'tax_invoice' && body.payment_received !== false);
+    const paidAmount = isPaid
+      ? Math.min(calculated.totalAmount, Number(body.paid_amount) || calculated.totalAmount)
+      : Math.max(0, Math.min(calculated.totalAmount, Number(body.paid_amount) || 0));
+    const balanceAmount = Math.max(0, Math.round((calculated.totalAmount - paidAmount) * 100) / 100);
+    const paymentStatus = balanceAmount <= 0.005 ? 'paid' : paidAmount > 0 ? 'partially_paid' : 'unpaid';
 
     const publicToken = randomBytes(16).toString('hex');
 
@@ -132,7 +150,7 @@ export async function POST(request: Request) {
       deal_id: body.deal_id || null,
       conversation_id: body.conversation_id || null,
       created_by_user_id: user.id,
-      status: body.status || (isPaid ? 'paid' : 'unpaid'),
+      status: body.status === 'draft' ? 'draft' : paymentStatus,
       issue_date: body.issue_date || new Date().toISOString().slice(0, 10),
       due_date: body.due_date || null,
       currency: body.currency || settings.default_currency || 'INR',
@@ -148,10 +166,10 @@ export async function POST(request: Request) {
 
       paid_amount: paidAmount,
       balance_amount: balanceAmount,
-      payment_method: body.payment_method || (isPaid ? 'upi' : null),
+      payment_method: paidAmount > 0 ? (body.payment_method || 'upi') : null,
       payment_reference: body.payment_reference || null,
       payment_notes: body.payment_notes || null,
-      paid_at: isPaid ? (body.paid_at || new Date().toISOString()) : null,
+      paid_at: paidAmount > 0 ? (body.paid_at || new Date().toISOString()) : null,
 
       client_name: body.client_name,
       client_phone: body.client_phone || null,
@@ -213,7 +231,10 @@ export async function POST(request: Request) {
         .insert(itemsToInsert);
 
       if (itemsErr) {
+        // Don't leave an invoice with no lines (and a burnt number) behind.
         console.error('[api/invoices] Items insert error:', itemsErr);
+        await supabase.from('invoices').delete().eq('id', invoice.id);
+        return NextResponse.json({ error: 'Could not save the line items — please try again' }, { status: 500 });
       }
     }
 

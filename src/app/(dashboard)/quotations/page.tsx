@@ -19,6 +19,7 @@ import {
   Clock,
   ArrowRight,
   FileText,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,10 +51,25 @@ export default function QuotationsPage() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [quoteToEdit, setQuoteToEdit] = useState<Quotation | null>(null);
   const [invoiceToEdit, setInvoiceToEdit] = useState<Invoice | null>(null);
+  // Create a proforma / tax invoice directly, without a quotation.
+  const [newInvoiceType, setNewInvoiceType] = useState<"proforma" | "tax_invoice" | null>(null);
+
+  const openCreate = (kind: "quotation" | "proforma" | "tax_invoice") => {
+    setQuoteToEdit(null);
+    setInvoiceToEdit(null);
+    setNewInvoiceType(kind === "quotation" ? null : kind);
+    setBuilderOpen(true);
+  };
 
   // Edit a proforma / tax invoice in the same builder form.
+  const quoteNumbers = useMemo(
+    () => new Map(quotations.map((q) => [q.id, q.quote_number])),
+    [quotations],
+  );
+
   const openInvoiceEditor = (inv: Invoice) => {
     setQuoteToEdit(null);
+    setNewInvoiceType(null);
     setInvoiceToEdit(inv);
     setBuilderOpen(true);
   };
@@ -231,20 +247,44 @@ export default function QuotationsPage() {
             Quotations & Invoicing Hub
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            2-Stage Billing: Quotation &rarr; Proforma Invoice (Pre-Payment) &rarr; Tax Invoice (Post-Payment / Receipt).
+            Quotation &rarr; Proforma Invoice (Pre-Payment) &rarr; Tax Invoice (Post-Payment). Convert from one stage to the next, or create any of them directly.
           </p>
         </div>
 
-        <Button
-          onClick={() => {
-            setQuoteToEdit(null);
-            setBuilderOpen(true);
-          }}
-          className="gap-2 shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          Create Quotation
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button className="gap-2 shrink-0">
+                <Plus className="h-4 w-4" />
+                Create
+                <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end" className="w-60">
+            <DropdownMenuItem onClick={() => openCreate("quotation")} className="cursor-pointer">
+              <FileText className="h-4 w-4 text-primary" />
+              <div>
+                <div className="font-medium">Quotation</div>
+                <div className="text-[11px] text-muted-foreground">Price offer for the client to accept</div>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openCreate("proforma")} className="cursor-pointer">
+              <Clock className="h-4 w-4 text-amber-600" />
+              <div>
+                <div className="font-medium">Proforma Invoice</div>
+                <div className="text-[11px] text-muted-foreground">Request payment — no quotation needed</div>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openCreate("tax_invoice")} className="cursor-pointer">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <div>
+                <div className="font-medium">Tax Invoice</div>
+                <div className="text-[11px] text-muted-foreground">GST invoice — no quotation or proforma needed</div>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Metrics Cards */}
@@ -377,7 +417,7 @@ export default function QuotationsPage() {
             <p className="mt-1 text-xs text-muted-foreground">
               Create your first proposal to send compliance quotes via WhatsApp.
             </p>
-            <Button size="sm" onClick={() => setBuilderOpen(true)} className="mt-4 gap-1.5">
+            <Button size="sm" onClick={() => openCreate("quotation")} className="mt-4 gap-1.5">
               <Plus className="h-4 w-4" /> Create Quotation
             </Button>
           </div>
@@ -491,8 +531,11 @@ export default function QuotationsPage() {
             <Clock className="mx-auto h-10 w-10 text-amber-500/40" />
             <h3 className="mt-3 text-sm font-semibold text-foreground">No Proforma Invoices</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              When a quotation is accepted, convert it to a Proforma Invoice with bank details & UPI QR to collect payment.
+              Convert an accepted quotation, or create a proforma directly with bank details & UPI QR to collect payment.
             </p>
+            <Button size="sm" onClick={() => openCreate("proforma")} className="mt-4 gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> Create Proforma Invoice
+            </Button>
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">
@@ -516,6 +559,7 @@ export default function QuotationsPage() {
                     </td>
                     <td className="p-3">
                       <div className="font-semibold text-foreground">{inv.title}</div>
+                      <OriginTag quotationId={inv.quotation_id} quoteNumbers={quoteNumbers} />
                       <div className="text-[11px] text-muted-foreground">
                         {inv.client_company || inv.client_name}
                       </div>
@@ -595,8 +639,11 @@ export default function QuotationsPage() {
             <CheckCircle2 className="mx-auto h-10 w-10 text-emerald-500/40" />
             <h3 className="mt-3 text-sm font-semibold text-foreground">No Tax Invoices Yet</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              Once payments are received and recorded, official Tax Invoices with green PAID stamps and UTR numbers appear here.
+              Record a payment on a proforma, or create a tax invoice directly.
             </p>
+            <Button size="sm" onClick={() => openCreate("tax_invoice")} className="mt-4 gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> Create Tax Invoice
+            </Button>
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border bg-card">
@@ -621,6 +668,7 @@ export default function QuotationsPage() {
                     </td>
                     <td className="p-3">
                       <div className="font-semibold text-foreground">{inv.title}</div>
+                      <OriginTag quotationId={inv.quotation_id} quoteNumbers={quoteNumbers} />
                       <div className="text-[11px] text-muted-foreground">
                         {inv.client_company || inv.client_name}
                       </div>
@@ -704,17 +752,24 @@ export default function QuotationsPage() {
         open={builderOpen}
         onOpenChange={(o) => {
           setBuilderOpen(o);
-          if (!o) setInvoiceToEdit(null);
+          if (!o) {
+            setInvoiceToEdit(null);
+            setNewInvoiceType(null);
+          }
         }}
         quotationToEdit={invoiceToEdit ? null : quoteToEdit}
         invoiceToEdit={invoiceToEdit}
+        newInvoiceType={newInvoiceType}
         onSuccess={() => {
           fetchData();
           setQuoteToEdit(null);
         }}
-        onInvoiceSaved={() => {
+        onInvoiceSaved={(inv) => {
           fetchData();
           setInvoiceToEdit(null);
+          setNewInvoiceType(null);
+          // Show the tab the new / edited document lives in.
+          if (inv?.invoice_type) setActiveTab(inv.invoice_type);
         }}
       />
 
@@ -750,6 +805,23 @@ function RevisionTag({ revision }: { revision?: number | null }) {
       title={`Edited ${revision} time${revision === 1 ? "" : "s"} after sending`}
     >
       Rev {revision}
+    </span>
+  );
+}
+
+/** Where an invoice came from: converted from a quotation, or created directly. */
+function OriginTag({ quotationId, quoteNumbers }: { quotationId?: string | null; quoteNumbers: Map<string, string> }) {
+  if (!quotationId) {
+    return (
+      <span className="mt-0.5 inline-block rounded border border-border px-1 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+        Direct
+      </span>
+    );
+  }
+  const num = quoteNumbers.get(quotationId);
+  return (
+    <span className="mt-0.5 inline-block rounded border border-primary/30 bg-primary/5 px-1 py-px text-[9px] font-medium text-primary">
+      From {num ? `quotation ${num}` : "quotation"}
     </span>
   );
 }
