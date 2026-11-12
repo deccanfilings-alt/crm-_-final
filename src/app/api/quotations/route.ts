@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { calculateQuotationTotals } from '@/lib/quotations/calculations';
 import { formatQuoteNumber } from '@/lib/quotations/numbering';
+import { allocateDocumentNumber, isDuplicateNumber } from '@/lib/quotations/next-number';
 import { getQuotationSettings } from '@/lib/quotations/settings';
 
 export async function GET(request: Request) {
@@ -146,17 +147,8 @@ export async function POST(request: Request) {
 
     // Fetch quotation settings to determine quote number
     const settings = await getQuotationSettings(supabase, profile.account_id);
-    const quoteNumber = formatQuoteNumber(settings.quote_prefix, settings.next_quote_number);
-
-    // Increment next_quote_number in settings
-    await supabase
-      .from('quotation_settings')
-      .upsert({
-        account_id: profile.account_id,
-        quote_prefix: settings.quote_prefix,
-        next_quote_number: settings.next_quote_number + 1,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'account_id' });
+    // Allocated in the database (migration 075) — safe for Team Members and concurrent users.
+    let quoteNumber = await allocateDocumentNumber(supabase, profile.account_id, 'quote', settings);
 
     const publicToken = randomBytes(16).toString('hex');
 
@@ -202,11 +194,24 @@ export async function POST(request: Request) {
       public_token: publicToken,
     };
 
-    const { data: createdQuote, error: quoteError } = await supabase
+    let { data: createdQuote, error: quoteError } = await supabase
       .from('quotations')
       .insert(quotationPayload)
       .select()
       .single();
+    // Number taken in the meantime (or a lagging counter): take the next one and retry.
+    for (let attempt = 0; attempt < 3 && isDuplicateNumber(quoteError); attempt++) {
+      quoteNumber = await allocateDocumentNumber(supabase, profile.account_id, 'quote', {
+        ...settings,
+        next_quote_number: (Number(quoteNumber.replace(/^.*?(\d+)$/, '$1')) || 1000) + 1,
+      });
+      quotationPayload.quote_number = quoteNumber;
+      ({ data: createdQuote, error: quoteError } = await supabase
+        .from('quotations')
+        .insert(quotationPayload)
+        .select()
+        .single());
+    }
 
     if (quoteError) {
       console.error('[api/quotations] insert quotation error:', quoteError);

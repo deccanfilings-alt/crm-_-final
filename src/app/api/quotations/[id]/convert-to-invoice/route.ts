@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { getQuotationSettings } from '@/lib/quotations/settings';
-import { formatInvoiceNumber } from '@/lib/quotations/numbering';
+import { allocateDocumentNumber, isDuplicateNumber } from '@/lib/quotations/next-number';
 
 export async function POST(
   request: Request,
@@ -32,9 +32,7 @@ export async function POST(
     }
 
     const settings = await getQuotationSettings(supabase, quote.account_id);
-    const nextNum = invoiceType === 'proforma' ? (settings.next_proforma_number || 1001) : (settings.next_tax_invoice_number || 1001);
-    const prefix = invoiceType === 'proforma' ? (settings.proforma_prefix || 'DF-PI-') : (settings.tax_invoice_prefix || 'DF-TI-');
-    const invoiceNumber = formatInvoiceNumber(prefix, nextNum, invoiceType);
+    const invoiceNumber = await allocateDocumentNumber(supabase, quote.account_id, invoiceType, settings);
 
     const isPaid = invoiceType === 'tax_invoice' || body.status === 'paid';
     const paidAmount = isPaid ? quote.total_amount : 0;
@@ -100,11 +98,19 @@ export async function POST(
       public_token: randomBytes(16).toString('hex'),
     };
 
-    const { data: newInvoice, error: invErr } = await supabase
+    let { data: newInvoice, error: invErr } = await supabase
       .from('invoices')
       .insert(invoicePayload)
       .select()
       .single();
+    for (let attempt = 0; attempt < 3 && isDuplicateNumber(invErr); attempt++) {
+      invoicePayload.invoice_number = await allocateDocumentNumber(supabase, quote.account_id, invoiceType, settings);
+      ({ data: newInvoice, error: invErr } = await supabase
+        .from('invoices')
+        .insert(invoicePayload)
+        .select()
+        .single());
+    }
 
     if (invErr) {
       console.error('[convert-to-invoice] insert error:', invErr);
@@ -137,16 +143,6 @@ export async function POST(
         })
         .eq('id', quote.id);
     }
-
-    // Increment running sequence
-    const updateField = invoiceType === 'proforma' ? 'next_proforma_number' : 'next_tax_invoice_number';
-    await supabase
-      .from('quotation_settings')
-      .update({
-        [updateField]: nextNum + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('account_id', quote.account_id);
 
     const { data: complete } = await supabase
       .from('invoices')

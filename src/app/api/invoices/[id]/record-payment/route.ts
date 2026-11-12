@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { getQuotationSettings } from '@/lib/quotations/settings';
-import { formatInvoiceNumber } from '@/lib/quotations/numbering';
+import { allocateDocumentNumber, isDuplicateNumber } from '@/lib/quotations/next-number';
 
 export async function POST(
   request: Request,
@@ -63,9 +63,7 @@ export async function POST(
     let taxInvoice = null;
     if (invoice.invoice_type === 'proforma') {
       const settings = await getQuotationSettings(supabase, invoice.account_id);
-      const nextNum = settings.next_tax_invoice_number || 1001;
-      const prefix = settings.tax_invoice_prefix || 'DF-TI-';
-      const taxInvoiceNumber = formatInvoiceNumber(prefix, nextNum, 'tax_invoice');
+      const taxInvoiceNumber = await allocateDocumentNumber(supabase, invoice.account_id, 'tax_invoice', settings);
 
       const taxInvoicePayload: any = {
         account_id: invoice.account_id,
@@ -142,6 +140,15 @@ export async function POST(
           .select()
           .single());
       }
+      for (let attempt = 0; attempt < 3 && isDuplicateNumber(tiErr); attempt++) {
+        taxInvoicePayload.invoice_number = await allocateDocumentNumber(supabase, invoice.account_id, 'tax_invoice', settings);
+        ({ data: newTi, error: tiErr } = await supabase
+          .from('invoices')
+          .insert({ ...taxInvoicePayload, source_invoice_id: invoice.id })
+          .select()
+          .single());
+      }
+      if (tiErr) console.error('[record-payment] tax invoice insert error:', tiErr);
 
       if (!tiErr && newTi) {
         taxInvoice = newTi;
@@ -159,15 +166,6 @@ export async function POST(
           }));
           await supabase.from('invoice_items').insert(tiItems);
         }
-
-        // Increment next_tax_invoice_number
-        await supabase
-          .from('quotation_settings')
-          .update({
-            next_tax_invoice_number: nextNum + 1,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('account_id', invoice.account_id);
       }
     }
 

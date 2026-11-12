@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@/lib/supabase/server';
 import { calculateQuotationTotals } from '@/lib/quotations/calculations';
-import { formatInvoiceNumber } from '@/lib/quotations/numbering';
+import { allocateDocumentNumber, isDuplicateNumber } from '@/lib/quotations/next-number';
 import { getQuotationSettings } from '@/lib/quotations/settings';
 
 export async function GET(request: Request) {
@@ -110,14 +110,8 @@ export async function POST(request: Request) {
     }
     const settings = await getQuotationSettings(supabase, profile.account_id);
 
-    // Numbering resolution
-    let invoiceNumber = body.invoice_number;
-    const nextNum = invoiceType === 'proforma' ? (settings.next_proforma_number || 1001) : (settings.next_tax_invoice_number || 1001);
-    const prefix = invoiceType === 'proforma' ? (settings.proforma_prefix || 'DF-PI-') : (settings.tax_invoice_prefix || 'DF-TI-');
-
-    if (!invoiceNumber) {
-      invoiceNumber = formatInvoiceNumber(prefix, nextNum, invoiceType);
-    }
+    // Numbering: allocated in the database (migration 075) unless given explicitly.
+    const manualNumber = typeof body.invoice_number === 'string' && body.invoice_number.trim() ? body.invoice_number.trim() : null;
 
     const rawItems = Array.isArray(body.items) ? body.items : [];
     const calculated = calculateQuotationTotals({
@@ -144,7 +138,7 @@ export async function POST(request: Request) {
       account_id: profile.account_id,
       quotation_id: body.quotation_id || null,
       invoice_type: invoiceType,
-      invoice_number: invoiceNumber,
+      invoice_number: manualNumber ?? '',
       title: body.title || (invoiceType === 'proforma' ? 'Proforma Invoice' : 'Tax Invoice'),
       contact_id: body.contact_id || null,
       deal_id: body.deal_id || null,
@@ -202,11 +196,20 @@ export async function POST(request: Request) {
       public_token: publicToken,
     };
 
-    const { data: invoice, error: insertError } = await supabase
+    insertData.invoice_number = manualNumber ?? (await allocateDocumentNumber(supabase, profile.account_id, invoiceType, settings));
+    let { data: invoice, error: insertError } = await supabase
       .from('invoices')
       .insert(insertData)
       .select()
       .single();
+    for (let attempt = 0; attempt < 3 && !manualNumber && isDuplicateNumber(insertError); attempt++) {
+      insertData.invoice_number = await allocateDocumentNumber(supabase, profile.account_id, invoiceType, settings);
+      ({ data: invoice, error: insertError } = await supabase
+        .from('invoices')
+        .insert(insertData)
+        .select()
+        .single());
+    }
 
     if (insertError) {
       console.error('[api/invoices] POST insert error:', insertError);
@@ -238,20 +241,6 @@ export async function POST(request: Request) {
         await supabase.from('invoices').delete().eq('id', invoice.id);
         return NextResponse.json({ error: 'Could not save the line items — please try again' }, { status: 500 });
       }
-    }
-
-    // Increment running sequence in settings
-    try {
-      const updateField = invoiceType === 'proforma' ? 'next_proforma_number' : 'next_tax_invoice_number';
-      await supabase
-        .from('quotation_settings')
-        .update({
-          [updateField]: nextNum + 1,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('account_id', profile.account_id);
-    } catch (seqErr) {
-      console.warn('[api/invoices] Sequence increment warning:', seqErr);
     }
 
     const { data: completeInvoice } = await supabase

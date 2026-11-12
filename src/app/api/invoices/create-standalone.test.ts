@@ -7,6 +7,10 @@ const state = vi.hoisted(() => ({
   updated: [] as Array<Record<string, unknown>>,
   itemsError: null as null | { message: string },
   settingsUpdates: [] as unknown[],
+  // next_document_number() (migration 075): null = function missing (legacy path)
+  rpcNumbers: [] as string[] | null,
+  rpcCalls: [] as unknown[],
+  dupFirstInsert: false,
 }));
 
 vi.mock("@/lib/quotations/settings", () => ({
@@ -24,6 +28,11 @@ vi.mock("@/lib/quotations/settings", () => ({
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: "u1" } }, error: null }) },
+    rpc: async (fn: string, args: unknown) => {
+      state.rpcCalls.push({ fn, args });
+      if (state.rpcNumbers === null) return { data: null, error: { code: "PGRST202", message: "not found" } };
+      return { data: state.rpcNumbers.shift() ?? null, error: null };
+    },
     from: (table: string) => {
       if (table === "profiles") {
         return {
@@ -33,7 +42,11 @@ vi.mock("@/lib/supabase/server", () => ({
       if (table === "invoices") {
         return {
           insert: (row: Record<string, unknown>) => {
-            state.inserted.push({ table, row });
+            state.inserted.push({ table, row: { ...row } });
+            if (state.dupFirstInsert) {
+              state.dupFirstInsert = false;
+              return { select: () => ({ single: async () => ({ data: null, error: { code: "23505", message: "duplicate key" } }) }) };
+            }
             return { select: () => ({ single: async () => ({ data: { id: "inv-1", ...row }, error: null }) }) };
           },
           update: (u: Record<string, unknown>) => ({ eq: async (_k: string, id: string) => (state.updated.push({ id, ...u }), { error: null }) }),
@@ -65,7 +78,7 @@ const base = {
   items: [{ title: "GST registration", quantity: 1, unit_price: 2000 }],
 };
 const post = (body: unknown) => POST(new Request("http://x/api/invoices", { method: "POST", body: JSON.stringify(body) }));
-const invoiceRow = () => state.inserted.find((i) => i.table === "invoices")!.row as Record<string, unknown>;
+const invoiceRow = () => state.inserted.filter((i) => i.table === "invoices").at(-1)!.row as Record<string, unknown>;
 
 beforeEach(() => {
   state.role = "agent";
@@ -74,6 +87,9 @@ beforeEach(() => {
   state.updated = [];
   state.itemsError = null;
   state.settingsUpdates = [];
+  state.rpcNumbers = ["DF-PI-1001", "DF-PI-1002"];
+  state.rpcCalls = [];
+  state.dupFirstInsert = false;
 });
 
 describe("POST /api/invoices — created directly, no quotation", () => {
@@ -92,10 +108,13 @@ describe("POST /api/invoices — created directly, no quotation", () => {
       payment_method: null,
       paid_at: null,
     });
-    expect(state.settingsUpdates[0]).toMatchObject({ next_proforma_number: 1002 });
+    // Number comes from the database (migration 075), not a client-side counter write.
+    expect(state.rpcCalls).toEqual([{ fn: "next_document_number", args: { p_kind: "proforma" } }]);
+    expect(state.settingsUpdates).toHaveLength(0);
   });
 
   it("creates a paid tax invoice with payment details", async () => {
+    state.rpcNumbers = ["DF-TI-2001"];
     await post({ ...base, invoice_type: "tax_invoice", payment_method: "bank_transfer", payment_reference: "UTR123" });
     expect(invoiceRow()).toMatchObject({
       invoice_type: "tax_invoice",
@@ -130,5 +149,22 @@ describe("POST /api/invoices — created directly, no quotation", () => {
     expect(state.updated).toEqual([{ id: "inv-1", status: "draft" }]);
     expect(state.deleted).toEqual(["inv-1"]);
     expect(state.settingsUpdates).toHaveLength(0);
+  });
+});
+
+describe("document numbering", () => {
+  it("retries with the next number if the number was already taken", async () => {
+    state.dupFirstInsert = true;
+    const res = await post({ ...base, invoice_type: "proforma" });
+    expect(res.status).toBe(201);
+    const numbers = state.inserted.filter((i) => i.table === "invoices").map((i) => (i.row as { invoice_number: string }).invoice_number);
+    expect(numbers).toEqual(["DF-PI-1001", "DF-PI-1002"]);
+  });
+  it("falls back to the settings counter until migration 075 is applied", async () => {
+    state.rpcNumbers = null;
+    const res = await post({ ...base, invoice_type: "proforma" });
+    expect(res.status).toBe(201);
+    expect(invoiceRow().invoice_number).toBe("DF-PI-1001");
+    expect(state.settingsUpdates[0]).toMatchObject({ next_proforma_number: 1002 });
   });
 });
