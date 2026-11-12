@@ -233,6 +233,8 @@ export async function POST(request: Request) {
       if (itemsErr) {
         // Don't leave an invoice with no lines (and a burnt number) behind.
         console.error('[api/invoices] Items insert error:', itemsErr);
+        // RLS only allows deleting drafts, so flip it to draft first.
+        await supabase.from('invoices').update({ status: 'draft' }).eq('id', invoice.id);
         await supabase.from('invoices').delete().eq('id', invoice.id);
         return NextResponse.json({ error: 'Could not save the line items — please try again' }, { status: 500 });
       }

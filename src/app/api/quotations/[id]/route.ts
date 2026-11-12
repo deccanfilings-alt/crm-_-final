@@ -226,7 +226,8 @@ export async function PATCH(
     const { count: linkedInvoices } = await supabase
       .from('invoices')
       .select('id', { count: 'exact', head: true })
-      .eq('quotation_id', id);
+      .eq('quotation_id', id)
+      .neq('status', 'cancelled');
 
     return NextResponse.json({
       success: true,

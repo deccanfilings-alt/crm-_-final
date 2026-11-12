@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   role: "agent",
   inserted: [] as Array<{ table: string; row: unknown }>,
   deleted: [] as string[],
+  updated: [] as Array<Record<string, unknown>>,
   itemsError: null as null | { message: string },
   settingsUpdates: [] as unknown[],
 }));
@@ -35,6 +36,7 @@ vi.mock("@/lib/supabase/server", () => ({
             state.inserted.push({ table, row });
             return { select: () => ({ single: async () => ({ data: { id: "inv-1", ...row }, error: null }) }) };
           },
+          update: (u: Record<string, unknown>) => ({ eq: async (_k: string, id: string) => (state.updated.push({ id, ...u }), { error: null }) }),
           delete: () => ({ eq: async (_k: string, id: string) => (state.deleted.push(id), { error: null }) }),
           select: () => ({ eq: () => ({ single: async () => ({ data: { id: "inv-1", ...(state.inserted[0]?.row as object) } }) }) }),
         };
@@ -69,6 +71,7 @@ beforeEach(() => {
   state.role = "agent";
   state.inserted = [];
   state.deleted = [];
+  state.updated = [];
   state.itemsError = null;
   state.settingsUpdates = [];
 });
@@ -123,6 +126,8 @@ describe("POST /api/invoices — created directly, no quotation", () => {
     state.itemsError = { message: "boom" };
     const res = await post({ ...base, invoice_type: "proforma" });
     expect(res.status).toBe(500);
+    // RLS only lets drafts be deleted: it must be flipped to draft first.
+    expect(state.updated).toEqual([{ id: "inv-1", status: "draft" }]);
     expect(state.deleted).toEqual(["inv-1"]);
     expect(state.settingsUpdates).toHaveLength(0);
   });

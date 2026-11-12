@@ -20,6 +20,7 @@ import {
   ArrowRight,
   FileText,
   ChevronDown,
+  Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { QuotationBuilderModal } from "@/components/quotations/quotation-builder-modal";
 import { RecordPaymentModal } from "@/components/invoices/record-payment-modal";
+import { RevertStageDialog, type RevertTarget } from "@/components/invoices/revert-stage-dialog";
 import { ConvertQuoteModal } from "@/components/invoices/convert-quote-modal";
 import type { Quotation, Invoice } from "@/types";
 
@@ -78,6 +80,8 @@ export default function QuotationsPage() {
   const [quoteToConvert, setQuoteToConvert] = useState<Quotation | null>(null);
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  // Move a proforma / tax invoice back to an earlier stage.
+  const [revert, setRevert] = useState<{ inv: Invoice; to: RevertTarget } | null>(null);
   const [invoiceToPay, setInvoiceToPay] = useState<Invoice | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -138,7 +142,8 @@ export default function QuotationsPage() {
 
     let totalCollectedRevenue = 0;
     for (const ti of taxInvoices) {
-      totalCollectedRevenue += Number(ti.paid_amount || ti.total_amount) || 0;
+      if (ti.status === "cancelled") continue;
+      totalCollectedRevenue += Number(ti.paid_amount) || 0;
     }
 
     const conversionRate = totalQuotesCount > 0 ? Math.round((acceptedQuotesCount / totalQuotesCount) * 100) : 0;
@@ -232,6 +237,8 @@ export default function QuotationsPage() {
         return <Badge className="bg-rose-500/15 text-rose-600 border-rose-500/30">Rejected</Badge>;
       case "expired":
         return <Badge className="bg-slate-500/15 text-slate-600 border-slate-500/30">Expired</Badge>;
+      case "cancelled":
+        return <Badge variant="outline" className="border-rose-500/30 text-rose-600 line-through decoration-rose-500/50">Cancelled</Badge>;
       default:
         return <Badge variant="outline" className="text-muted-foreground">Draft</Badge>;
     }
@@ -552,7 +559,7 @@ export default function QuotationsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {proformaInvoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-muted/30 transition-colors">
+                  <tr key={inv.id} className={`hover:bg-muted/30 transition-colors ${inv.status === "cancelled" ? "opacity-60" : ""}`}>
                     <td className="p-3 font-mono font-bold text-amber-700">
                       {inv.invoice_number}
                       <RevisionTag revision={(inv as { revision?: number }).revision} />
@@ -560,6 +567,12 @@ export default function QuotationsPage() {
                     <td className="p-3">
                       <div className="font-semibold text-foreground">{inv.title}</div>
                       <OriginTag quotationId={inv.quotation_id} quoteNumbers={quoteNumbers} />
+                      {inv.status === "cancelled" && (
+                        <div className="text-[10px] text-rose-600">
+                          Moved back{inv.cancelled_at ? ` on ${new Date(inv.cancelled_at).toLocaleDateString("en-IN")}` : ""}
+                          {inv.cancel_reason ? ` — ${inv.cancel_reason}` : ""}
+                        </div>
+                      )}
                       <div className="text-[11px] text-muted-foreground">
                         {inv.client_company || inv.client_name}
                       </div>
@@ -573,7 +586,7 @@ export default function QuotationsPage() {
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {inv.status !== "paid" && (
+                        {inv.status !== "paid" && inv.status !== "cancelled" && (
                           <Button
                             size="sm"
                             className="h-7 text-[11px] gap-1 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -587,14 +600,16 @@ export default function QuotationsPage() {
                           </Button>
                         )}
 
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-[11px] gap-1 text-emerald-600 hover:text-emerald-700"
-                          onClick={() => handleSendInvoiceWhatsApp(inv)}
-                        >
-                          <Send className="h-3 w-3" /> WhatsApp
-                        </Button>
+                        {inv.status !== "cancelled" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] gap-1 text-emerald-600 hover:text-emerald-700"
+                            onClick={() => handleSendInvoiceWhatsApp(inv)}
+                          >
+                            <Send className="h-3 w-3" /> WhatsApp
+                          </Button>
+                        )}
 
                         <DropdownMenu>
                           <DropdownMenuTrigger
@@ -619,6 +634,9 @@ export default function QuotationsPage() {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => openInvoiceEditor(inv)}>
                                   <Edit className="mr-2 h-3.5 w-3.5" /> Edit Proforma
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setRevert({ inv, to: "quotation" })}>
+                                  <Undo2 className="mr-2 h-3.5 w-3.5" /> Move back to Quotation
                                 </DropdownMenuItem>
                               </>
                             )}
@@ -661,7 +679,7 @@ export default function QuotationsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {taxInvoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-muted/30 transition-colors">
+                  <tr key={inv.id} className={`hover:bg-muted/30 transition-colors ${inv.status === "cancelled" ? "opacity-60" : ""}`}>
                     <td className="p-3 font-mono font-bold text-emerald-700">
                       {inv.invoice_number}
                       <RevisionTag revision={(inv as { revision?: number }).revision} />
@@ -669,6 +687,12 @@ export default function QuotationsPage() {
                     <td className="p-3">
                       <div className="font-semibold text-foreground">{inv.title}</div>
                       <OriginTag quotationId={inv.quotation_id} quoteNumbers={quoteNumbers} />
+                      {inv.status === "cancelled" && (
+                        <div className="text-[10px] text-rose-600">
+                          Moved back{inv.cancelled_at ? ` on ${new Date(inv.cancelled_at).toLocaleDateString("en-IN")}` : ""}
+                          {inv.cancel_reason ? ` — ${inv.cancel_reason}` : ""}
+                        </div>
+                      )}
                       <div className="text-[11px] text-muted-foreground">
                         {inv.client_company || inv.client_name}
                       </div>
@@ -691,23 +715,40 @@ export default function QuotationsPage() {
                       )}
                     </td>
                     <td className="p-3">
-                      <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 font-bold">
-                        PAID
-                      </Badge>
+                      {inv.status === "paid" ? (
+                        <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 font-bold">PAID</Badge>
+                      ) : (
+                        statusBadge(inv.status)
+                      )}
                     </td>
                     <td className="p-3 text-muted-foreground">
                       {inv.paid_at ? new Date(inv.paid_at).toLocaleDateString("en-IN") : new Date(inv.issue_date).toLocaleDateString("en-IN")}
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-[11px] gap-1 text-emerald-600 hover:text-emerald-700"
-                          onClick={() => handleSendInvoiceWhatsApp(inv)}
-                        >
-                          <Send className="h-3 w-3" /> WhatsApp Receipt
-                        </Button>
+                        {(inv.status === "unpaid" || inv.status === "partially_paid") && (
+                          <Button
+                            size="sm"
+                            className="h-7 text-[11px] gap-1 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => {
+                              setInvoiceToPay(inv);
+                              setPaymentModalOpen(true);
+                            }}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Record Payment
+                          </Button>
+                        )}
+                        {inv.status !== "cancelled" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-[11px] gap-1 text-emerald-600 hover:text-emerald-700"
+                            onClick={() => handleSendInvoiceWhatsApp(inv)}
+                          >
+                            <Send className="h-3 w-3" /> WhatsApp Receipt
+                          </Button>
+                        )}
 
                         <DropdownMenu>
                           <DropdownMenuTrigger
@@ -732,6 +773,13 @@ export default function QuotationsPage() {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={() => openInvoiceEditor(inv)}>
                                   <Edit className="mr-2 h-3.5 w-3.5" /> Edit Tax Invoice
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => setRevert({ inv, to: "proforma" })}>
+                                  <Undo2 className="mr-2 h-3.5 w-3.5" /> Move back to Proforma
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setRevert({ inv, to: "quotation" })}>
+                                  <Undo2 className="mr-2 h-3.5 w-3.5" /> Move back to Quotation
                                 </DropdownMenuItem>
                               </>
                             )}
@@ -770,6 +818,19 @@ export default function QuotationsPage() {
           setNewInvoiceType(null);
           // Show the tab the new / edited document lives in.
           if (inv?.invoice_type) setActiveTab(inv.invoice_type);
+        }}
+      />
+
+      <RevertStageDialog
+        invoice={revert?.inv ?? null}
+        to={revert?.to ?? "quotation"}
+        allInvoices={invoices}
+        quoteNumber={revert?.inv.quotation_id ? quoteNumbers.get(revert.inv.quotation_id) : null}
+        open={!!revert}
+        onOpenChange={(o) => !o && setRevert(null)}
+        onDone={(r) => {
+          fetchData();
+          setActiveTab(r.target_type === "quotation" ? "quotations" : "proforma");
         }}
       />
 

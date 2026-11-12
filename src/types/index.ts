@@ -840,6 +840,11 @@ export interface Invoice {
   id: string;
   account_id: string;
   quotation_id?: string | null;
+  /** Tax invoice -> the proforma it was paid from (migration 074). */
+  source_invoice_id?: string | null;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
+  revision?: number;
   invoice_type: InvoiceType;
   invoice_number: string;
   title: string;

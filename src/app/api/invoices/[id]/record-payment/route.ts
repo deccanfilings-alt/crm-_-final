@@ -128,11 +128,20 @@ export async function POST(
         public_token: randomBytes(16).toString('hex'),
       };
 
-      const { data: newTi, error: tiErr } = await supabase
+      // Link the tax invoice to this proforma (migration 074) so it can be
+      // moved back later. Retry without the link if 074 isn't applied yet.
+      let { data: newTi, error: tiErr } = await supabase
         .from('invoices')
-        .insert(taxInvoicePayload)
+        .insert({ ...taxInvoicePayload, source_invoice_id: invoice.id })
         .select()
         .single();
+      if (tiErr && (tiErr.code === 'PGRST204' || tiErr.code === '42703')) {
+        ({ data: newTi, error: tiErr } = await supabase
+          .from('invoices')
+          .insert(taxInvoicePayload)
+          .select()
+          .single());
+      }
 
       if (!tiErr && newTi) {
         taxInvoice = newTi;
