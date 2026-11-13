@@ -14,6 +14,7 @@ export async function GET(
       .from('quotations')
       .select('*, items:quotation_items(*)')
       .eq('public_token', token)
+      .is('deleted_at', null)
       .single();
 
     if (error || !quote) {

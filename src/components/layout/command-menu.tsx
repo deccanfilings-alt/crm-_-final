@@ -22,6 +22,9 @@ const NAVIGATION_ITEMS = [
   { title: "Pipelines", href: "/pipelines", icon: <Compass className="mr-2 h-4 w-4" /> },
   { title: "Action Items", href: "/action-items", icon: <Compass className="mr-2 h-4 w-4" /> },
   { title: "Broadcasts", href: "/broadcasts", icon: <Compass className="mr-2 h-4 w-4" /> },
+  { title: "Quotations", href: "/billing/quotations", icon: <Compass className="mr-2 h-4 w-4" /> },
+  { title: "New Quotation", href: "/billing/quotations/new", icon: <Compass className="mr-2 h-4 w-4" /> },
+  { title: "Invoices", href: "/quotations", icon: <Compass className="mr-2 h-4 w-4" /> },
   { title: "Automations", href: "/automations", icon: <Compass className="mr-2 h-4 w-4" /> },
   { title: "Settings", href: "/settings", icon: <Compass className="mr-2 h-4 w-4" /> },
 ];

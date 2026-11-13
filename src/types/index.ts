@@ -770,11 +770,14 @@ export interface TeamMessage {
 // QUOTATIONS & BILLING
 // ============================================================
 
-export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+/** WebLedger-style statuses (migration 076). */
+export type QuotationStatus = 'draft' | 'final' | 'invoiced' | 'cancelled';
 export type QuotationDiscountType = 'percentage' | 'fixed' | 'none';
 export type QuotationTaxType = 'gst' | 'custom' | 'none';
 
 export interface QuotationSettings {
+  /** Company's state — CGST + SGST vs IGST (migration 076). */
+  company_state?: string | null;
   account_id: string;
   company_name: string;
   company_logo_url?: string | null;

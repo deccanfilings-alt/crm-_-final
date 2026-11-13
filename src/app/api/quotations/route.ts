@@ -37,6 +37,7 @@ export async function GET(request: Request) {
       .from('quotations')
       .select('*, items:quotation_items(*)', { count: 'exact' })
       .eq('account_id', profile.account_id)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 

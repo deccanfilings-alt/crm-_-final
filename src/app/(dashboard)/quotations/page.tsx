@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { Suspense, useState, useEffect, useMemo, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   Plus,
@@ -36,11 +37,26 @@ import {
 import { QuotationBuilderModal } from "@/components/quotations/quotation-builder-modal";
 import { RecordPaymentModal } from "@/components/invoices/record-payment-modal";
 import { RevertStageDialog, type RevertTarget } from "@/components/invoices/revert-stage-dialog";
+import { PaymentStatusMenu } from "@/components/invoices/payment-status-menu";
 import { ConvertQuoteModal } from "@/components/invoices/convert-quote-modal";
 import type { Quotation, Invoice } from "@/types";
 
+// Quotations moved to /billing/quotations (WebLedger-style list); this
+// hub now shows Proforma and Tax Invoices. ?tab=tax_invoice opens that tab.
 export default function QuotationsPage() {
-  const [activeTab, setActiveTab] = useState<"quotations" | "proforma" | "tax_invoice">("quotations");
+  return (
+    <Suspense fallback={null}>
+      <QuotationsHub />
+    </Suspense>
+  );
+}
+
+function QuotationsHub() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<"quotations" | "proforma" | "tax_invoice">(
+    searchParams.get("tab") === "tax_invoice" ? "tax_invoice" : "proforma",
+  );
 
   // Quotations state
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -48,6 +64,12 @@ export default function QuotationsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  // Quotation and invoice statuses differ: reset the filter on tab change.
+  const [filterTab, setFilterTab] = useState(activeTab);
+  if (filterTab !== activeTab) {
+    setFilterTab(activeTab);
+    setStatusFilter("all");
+  }
 
   // Modals state
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -57,9 +79,14 @@ export default function QuotationsPage() {
   const [newInvoiceType, setNewInvoiceType] = useState<"proforma" | "tax_invoice" | null>(null);
 
   const openCreate = (kind: "quotation" | "proforma" | "tax_invoice") => {
+    // Quotations use the new WebLedger-style form page.
+    if (kind === "quotation") {
+      router.push("/billing/quotations/new");
+      return;
+    }
     setQuoteToEdit(null);
     setInvoiceToEdit(null);
-    setNewInvoiceType(kind === "quotation" ? null : kind);
+    setNewInvoiceType(kind);
     setBuilderOpen(true);
   };
 
@@ -82,6 +109,12 @@ export default function QuotationsPage() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   // Move a proforma / tax invoice back to an earlier stage.
   const [revert, setRevert] = useState<{ inv: Invoice; to: RevertTarget } | null>(null);
+
+  // Status dropdown: proforma already has a tax invoice -> offer moving that back.
+  const revertTaxInvoice = (taxInvoiceId: string) => {
+    const ti = invoices.find((i) => i.id === taxInvoiceId);
+    if (ti) setRevert({ inv: ti, to: "proforma" });
+  };
   const [invoiceToPay, setInvoiceToPay] = useState<Invoice | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -134,7 +167,7 @@ export default function QuotationsPage() {
     for (const q of quotations) {
       const amt = Number(q.total_amount) || 0;
       totalQuotesValue += amt;
-      if (q.status === "accepted") {
+      if (q.status === "invoiced" || q.accepted_at) {
         acceptedQuotesValue += amt;
         acceptedQuotesCount += 1;
       }
@@ -225,18 +258,14 @@ export default function QuotationsPage() {
     switch (st) {
       case "paid":
         return <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30">Paid</Badge>;
-      case "accepted":
-        return <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30">Accepted</Badge>;
-      case "sent":
-        return <Badge className="bg-sky-500/15 text-sky-600 border-sky-500/30">Sent</Badge>;
+      case "final":
+        return <Badge className="bg-sky-500/15 text-sky-600 border-sky-500/30">Final</Badge>;
+      case "invoiced":
+        return <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30">Invoiced</Badge>;
       case "partially_paid":
         return <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30">Partially Paid</Badge>;
       case "unpaid":
         return <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30">Unpaid</Badge>;
-      case "rejected":
-        return <Badge className="bg-rose-500/15 text-rose-600 border-rose-500/30">Rejected</Badge>;
-      case "expired":
-        return <Badge className="bg-slate-500/15 text-slate-600 border-slate-500/30">Expired</Badge>;
       case "cancelled":
         return <Badge variant="outline" className="border-rose-500/30 text-rose-600 line-through decoration-rose-500/50">Cancelled</Badge>;
       default:
@@ -338,7 +367,7 @@ export default function QuotationsPage() {
       {/* Primary Navigation Tabs */}
       <div className="flex items-center gap-2 border-b border-border pb-1">
         <button
-          onClick={() => setActiveTab("quotations")}
+          onClick={() => router.push("/billing/quotations")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-t-lg text-xs font-semibold border-b-2 transition-all ${
             activeTab === "quotations"
               ? "border-primary text-primary bg-primary/5"
@@ -386,7 +415,10 @@ export default function QuotationsPage() {
       {/* Filter and Search Bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-1.5">
-          {["all", "draft", "unpaid", "paid", "accepted", "sent"].map((st) => (
+          {(activeTab === "quotations"
+            ? ["all", "draft", "final", "invoiced", "cancelled"]
+            : ["all", "unpaid", "partially_paid", "paid", "cancelled"]
+          ).map((st) => (
             <Button
               key={st}
               size="sm"
@@ -394,7 +426,7 @@ export default function QuotationsPage() {
               className="h-8 capitalize text-xs"
               onClick={() => setStatusFilter(st)}
             >
-              {st}
+              {st.replace("_", " ")}
             </Button>
           ))}
         </div>
@@ -457,13 +489,19 @@ export default function QuotationsPage() {
                     <td className="p-3 font-semibold text-foreground">
                       ₹{Number(q.total_amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="p-3">{statusBadge(q.status)}</td>
+                    <td className="p-3">
+                      {statusBadge(q.status)}
+                      {q.accepted_at && q.status === "final" && (
+                        <div className="mt-1 text-[10px] font-medium text-emerald-600">Accepted by client</div>
+                      )}
+                    </td>
                     <td className="p-3 text-muted-foreground">
                       {new Date(q.issue_date).toLocaleDateString("en-IN")}
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         {/* 1-Click Convert to Invoice Button */}
+                        {(q.status === "draft" || q.status === "final") && (
                         <Button
                           size="sm"
                           variant="secondary"
@@ -476,6 +514,7 @@ export default function QuotationsPage() {
                           <ArrowRight className="h-3.5 w-3.5" />
                           Convert to Invoice
                         </Button>
+                        )}
 
                         <Button
                           size="sm"
@@ -505,14 +544,13 @@ export default function QuotationsPage() {
                               <Copy className="mr-2 h-3.5 w-3.5" /> Copy Client Link
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
+                            {(q.status === "draft" || q.status === "final") && (
                             <DropdownMenuItem
-                              onClick={() => {
-                                setQuoteToEdit(q);
-                                setBuilderOpen(true);
-                              }}
+                              onClick={() => router.push(`/billing/quotations/${q.id}/edit`)}
                             >
                               <Edit className="mr-2 h-3.5 w-3.5" /> Edit Quotation
                             </DropdownMenuItem>
+                            )}
                             {q.status === "draft" && (
                               <DropdownMenuItem
                                 onClick={() => handleDeleteQuote(q)}
@@ -580,7 +618,13 @@ export default function QuotationsPage() {
                     <td className="p-3 font-semibold text-foreground">
                       ₹{Number(inv.total_amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="p-3">{statusBadge(inv.status)}</td>
+                    <td className="p-3">
+                      {inv.status === "cancelled" || inv.status === "draft" ? (
+                        statusBadge(inv.status)
+                      ) : (
+                        <PaymentStatusMenu invoice={inv} onChanged={() => fetchData()} onNeedsRevert={revertTaxInvoice} />
+                      )}
+                    </td>
                     <td className="p-3 text-muted-foreground">
                       {new Date(inv.issue_date).toLocaleDateString("en-IN")}
                     </td>
@@ -715,10 +759,10 @@ export default function QuotationsPage() {
                       )}
                     </td>
                     <td className="p-3">
-                      {inv.status === "paid" ? (
-                        <Badge className="bg-emerald-500/15 text-emerald-600 border-emerald-500/30 font-bold">PAID</Badge>
-                      ) : (
+                      {inv.status === "cancelled" || inv.status === "draft" ? (
                         statusBadge(inv.status)
+                      ) : (
+                        <PaymentStatusMenu invoice={inv} onChanged={() => fetchData()} emphasizePaid />
                       )}
                     </td>
                     <td className="p-3 text-muted-foreground">

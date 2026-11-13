@@ -717,8 +717,8 @@ export function QuotationBuilderModal({
                 </p>
                 <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
                   <li>The client&apos;s link and PDF show the updated version. Use “Save &amp; Resend” to send it to them on WhatsApp.</li>
-                  {!isInvoice && quotationToEdit?.status === "accepted" && (
-                    <li>It was accepted. If you change items, prices, discount or tax it goes back to “Sent” and the client must accept again.</li>
+                  {!isInvoice && quotationToEdit?.accepted_at && (
+                    <li>The client accepted it. If you change items, prices, discount or tax, that acceptance is cleared and the client must accept again.</li>
                   )}
                   {isInvoice && paidSoFar > 0 && (
                     <li>

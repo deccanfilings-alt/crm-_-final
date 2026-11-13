@@ -20,7 +20,7 @@ import { AiProvidersPanel } from '@/components/settings/ai-providers-panel';
 import { ApiKeysPanel } from '@/components/settings/api-keys-panel';
 import { CannedResponsesPanel } from '@/components/settings/canned-responses-panel';
 import { BackupPanel } from '@/components/settings/backup-panel';
-import { QuotationSettingsPanel } from '@/components/settings/quotation-settings-panel';
+import { BillingSettingsPanel } from '@/components/settings/billing/billing-settings-panel';
 import {
   resolveSection,
   type SettingsSection,
@@ -70,7 +70,7 @@ export default function SettingsPage() {
     'api-keys': <ApiKeysPanel />,
     canned: <CannedResponsesPanel />,
     backups: <BackupPanel />,
-    quotations: <QuotationSettingsPanel />,
+    quotations: <BillingSettingsPanel />,
   };
 
   return (

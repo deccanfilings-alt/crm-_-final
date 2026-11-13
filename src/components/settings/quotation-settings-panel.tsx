@@ -31,8 +31,10 @@ import {
 import { SettingsPanelHead } from "./settings-panel-head";
 import { uploadAccountMedia } from "@/lib/storage/upload-media";
 import type { QuotationSettings } from "@/types";
+import { INDIAN_STATES } from "@/lib/billing/states";
 
-export function QuotationSettingsPanel() {
+/** `embedded`: shown as the "Company & Bank" tab of Settings -> Billing. */
+export function QuotationSettingsPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const { accountRole } = useAuth();
   const canEdit = accountRole === "owner" || accountRole === "admin";
   const canEditBank = accountRole === "owner";
@@ -158,10 +160,12 @@ export function QuotationSettingsPanel() {
 
   return (
     <div className="space-y-6">
-      <SettingsPanelHead
-        title="Quotations & Billing"
-        description="Configure default issuing company details, GSTIN, bank information, authorized signatures, and official seals for quotations and invoices."
-      />
+      {!embedded && (
+        <SettingsPanelHead
+          title="Quotations & Billing"
+          description="Configure default issuing company details, GSTIN, bank information, authorized signatures, and official seals for quotations and invoices."
+        />
+      )}
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* Company Details */}
@@ -198,6 +202,27 @@ export function QuotationSettingsPanel() {
                 placeholder="Suite 402, Signature Towers, Hyderabad, Telangana - 500081"
                 rows={2}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="company_state">State</Label>
+              <select
+                id="company_state"
+                disabled={!canEdit}
+                value={formData.company_state || ""}
+                onChange={(e) => handleChange("company_state", e.target.value || null)}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
+              >
+                <option value="">Select state</option>
+                {INDIAN_STATES.map((s) => (
+                  <option key={s.code} value={s.name}>
+                    {s.name} ({s.code})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                Clients in this state are charged CGST + SGST; clients in other states, IGST.
+              </p>
             </div>
 
             <div className="space-y-1.5">
@@ -602,35 +627,16 @@ export function QuotationSettingsPanel() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <QrCode className="h-5 w-5 text-primary" />
-              <CardTitle>Numbering & Default Terms</CardTitle>
+              <CardTitle>Default Terms</CardTitle>
             </div>
             <CardDescription>
-              Automatic quotation reference generator and terms & conditions boilerplate.
+              Terms & conditions printed on quotations and invoices.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="quote_prefix">Quotation Number Prefix</Label>
-              <Input
-                id="quote_prefix"
-                disabled={!canEdit}
-                value={formData.quote_prefix || "DF-QT-"}
-                onChange={(e) => handleChange("quote_prefix", e.target.value)}
-                placeholder="DF-QT-"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="next_quote_number">Next Quotation Sequence Number</Label>
-              <Input
-                id="next_quote_number"
-                type="number"
-                disabled={!canEdit}
-                value={formData.next_quote_number || 1001}
-                onChange={(e) => handleChange("next_quote_number", e.target.value)}
-                placeholder="1001"
-              />
-            </div>
+            <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground sm:col-span-2">
+              Quotation numbering (prefix, next number, financial-year series) is set in the <span className="font-semibold">Series</span> tab.
+            </p>
 
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="default_terms">Default Terms & Conditions</Label>
@@ -655,7 +661,7 @@ export function QuotationSettingsPanel() {
                   Saving Settings...
                 </>
               ) : (
-                "Save Quotation Settings"
+                "Save Company & Bank"
               )}
             </Button>
           </div>

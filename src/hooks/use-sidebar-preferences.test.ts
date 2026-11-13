@@ -38,10 +38,17 @@ describe("sidebar-preferences pure logic", () => {
     expect(updated).toEqual(["/quotations", "/team-chat", "/contacts", "/pipelines"]);
   });
 
+  it("keeps the old Quotations position for the new Billing group", () => {
+    const merged = mergeNavHrefsWithDefaults(["/contacts", "/quotations", "/team-chat"]);
+    expect(merged.slice(0, 3)).toEqual(["/contacts", "/billing", "/team-chat"]);
+    expect(merged).not.toContain("/quotations");
+    expect(merged.filter((h) => h === "/billing")).toHaveLength(1);
+  });
+
   it("merges stored order with default hrefs to handle new routes safely", () => {
-    const saved = ["/quotations", "/team-chat"];
+    const saved = ["/billing", "/team-chat"];
     const merged = mergeNavHrefsWithDefaults(saved);
-    expect(merged[0]).toBe("/quotations");
+    expect(merged[0]).toBe("/billing");
     expect(merged[1]).toBe("/team-chat");
     expect(merged.length).toBe(DEFAULT_CUSTOMIZABLE_HREFS.length);
     // Contains all other default items

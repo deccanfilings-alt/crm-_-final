@@ -148,13 +148,15 @@ export async function POST(
       }).eq('id', conversationId);
     }
 
-    // 7. Update quotation status to sent
+    // 7. Mark as sent (✓✓). A draft becomes final; invoiced stays invoiced.
+    const sentAt = new Date().toISOString();
     const { data: updatedQuote, error: updateErr } = await supabase
       .from('quotations')
       .update({
-        status: 'sent',
-        sent_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        ...(quote.status === 'draft' ? { status: 'final' } : {}),
+        sent_at: sentAt,
+        sent_whatsapp_at: sentAt,
+        updated_at: sentAt,
       })
       .eq('id', id)
       .select()

@@ -25,11 +25,31 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { status } = body;
+    // Draft / Final / Cancelled can be set by hand ("Invoiced" only by
+    // converting). Older names are still accepted and mapped.
+    const LEGACY: Record<string, string> = { sent: 'final', accepted: 'final', rejected: 'cancelled', expired: 'cancelled' };
+    const requested = String(body.status ?? '');
+    const status = LEGACY[requested] ?? requested;
 
-    const VALID_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
+    const VALID_STATUSES = ['draft', 'final', 'cancelled'];
     if (!VALID_STATUSES.includes(status)) {
-      return NextResponse.json({ error: `Invalid status "${status}"` }, { status: 400 });
+      return NextResponse.json({ error: `Invalid status "${requested}"` }, { status: 400 });
+    }
+
+    const { data: current } = await supabase
+      .from('quotations')
+      .select('status')
+      .eq('id', id)
+      .eq('account_id', profile.account_id)
+      .maybeSingle();
+    if (!current) {
+      return NextResponse.json({ error: 'Quotation not found' }, { status: 404 });
+    }
+    if (current.status === 'invoiced') {
+      return NextResponse.json(
+        { error: 'This quotation is already invoiced. Move its invoice back to the quotation stage first.' },
+        { status: 409 },
+      );
     }
 
     const updates: Record<string, any> = {
@@ -37,9 +57,8 @@ export async function PATCH(
       updated_at: new Date().toISOString(),
     };
 
-    if (status === 'accepted') updates.accepted_at = new Date().toISOString();
-    if (status === 'rejected') updates.rejected_at = new Date().toISOString();
-    if (status === 'sent') updates.sent_at = new Date().toISOString();
+    if (requested === 'accepted') updates.accepted_at = new Date().toISOString();
+    if (requested === 'rejected') updates.rejected_at = new Date().toISOString();
 
     const { data: updated, error } = await supabase
       .from('quotations')

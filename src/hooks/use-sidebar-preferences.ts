@@ -8,7 +8,7 @@ export const DEFAULT_CUSTOMIZABLE_HREFS = [
   "/team-chat",
   "/contacts",
   "/pipelines",
-  "/quotations",
+  "/billing",
   "/broadcasts",
   "/action-items",
   "/automations",
@@ -53,12 +53,21 @@ export function applySidebarPinOrder(order: string[], href: string): string[] {
   return [href, ...remaining];
 }
 
+/** Items that were renamed: a saved old href keeps its place under the new one. */
+const RENAMED_HREFS: Record<string, string> = {
+  "/quotations": "/billing",
+};
+
+export function migrateNavHref(href: string): string {
+  return RENAMED_HREFS[href] ?? href;
+}
+
 /**
  * Merges stored order with system defaults so any new routes are preserved.
  */
 export function mergeNavHrefsWithDefaults(savedOrder: string[]): string[] {
   const validSet = new Set(DEFAULT_CUSTOMIZABLE_HREFS);
-  const filtered = savedOrder.filter((href) => validSet.has(href));
+  const filtered = [...new Set(savedOrder.map(migrateNavHref))].filter((href) => validSet.has(href));
   const missing = DEFAULT_CUSTOMIZABLE_HREFS.filter((href) => !filtered.includes(href));
   return [...filtered, ...missing];
 }
@@ -92,7 +101,7 @@ export function useSidebarPreferences(userId?: string) {
       if (storedPinnedRaw) {
         const parsedPinned = JSON.parse(storedPinnedRaw) as string[];
         if (Array.isArray(parsedPinned)) {
-          setPinned(parsedPinned.filter((h) => DEFAULT_CUSTOMIZABLE_HREFS.includes(h)));
+          setPinned([...new Set(parsedPinned.map(migrateNavHref))].filter((h) => DEFAULT_CUSTOMIZABLE_HREFS.includes(h)));
         }
       } else {
         setPinned([]);

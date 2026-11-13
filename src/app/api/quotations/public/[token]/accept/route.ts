@@ -22,7 +22,9 @@ export async function POST(
     const { data: updated, error: updateErr } = await admin
       .from('quotations')
       .update({
-        status: 'accepted',
+        // Client accepted online: stays "final" (or "invoiced"); the
+        // acceptance itself is recorded in accepted_at.
+        ...(quote.status === 'draft' ? { status: 'final' } : {}),
         accepted_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })

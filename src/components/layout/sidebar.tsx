@@ -102,7 +102,17 @@ const customizableNavItems: NavItem[] = [
   { href: "/team-chat", label: "Team Chat", icon: UsersRound },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
-  { href: "/quotations", label: "Quotations", icon: Receipt },
+  {
+    href: "/billing",
+    label: "Billing",
+    icon: Receipt,
+    activePrefixes: ["/billing", "/quotations"],
+    children: [
+      { href: "/billing/quotations", label: "Quotation" },
+      { href: "/quotations", label: "Invoice" },
+      { href: "/settings?tab=quotations", label: "Settings", activePrefixes: [] },
+    ],
+  },
   { href: "/broadcasts", label: "Broadcasts", icon: Megaphone },
   { href: "/action-items", label: "My Action Items", icon: CheckSquare },
   { href: "/automations", label: "Automations", icon: Zap },
@@ -439,9 +449,10 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
               >
                 <ul className="flex flex-col gap-1">
                   {visibleCustomizableItems.map((item) => {
-                    const isActive =
-                      pathname === item.href ||
-                      (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                    const isActive = item.activePrefixes
+                      ? item.activePrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+                      : pathname === item.href ||
+                        (item.href !== "/dashboard" && pathname.startsWith(item.href));
                     const showUnreadDot =
                       item.href === "/inbox" && totalUnread > 0 && !isActive;
                     const isPinned = pinned.includes(item.href);

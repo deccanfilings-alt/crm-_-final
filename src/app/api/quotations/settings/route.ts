@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getQuotationSettings, DEFAULT_QUOTATION_SETTINGS } from '@/lib/quotations/settings';
+import { canonicalState } from '@/lib/billing/states';
 
 export async function GET() {
   try {
@@ -92,8 +93,16 @@ export async function POST(request: Request) {
       signature_url: body.signature_url !== undefined ? (body.signature_url?.trim() || null) : null,
       stamp_url: body.stamp_url !== undefined ? (body.stamp_url?.trim() || null) : null,
       default_terms: body.default_terms !== undefined ? body.default_terms : DEFAULT_QUOTATION_SETTINGS.default_terms,
-      quote_prefix: body.quote_prefix?.trim() || 'DF-QT-',
-      next_quote_number: Math.max(1, parseInt(body.next_quote_number, 10) || 1001),
+      // Quotation numbering now lives in Settings -> Billing -> Series;
+      // keep the stored values unless explicitly sent (never reset to 1001).
+      quote_prefix: body.quote_prefix?.trim() || currentSettings.quote_prefix || 'DF-QT-',
+      next_quote_number: Math.max(
+        1,
+        parseInt(body.next_quote_number, 10) || Number(currentSettings.next_quote_number) || 1001,
+      ),
+      company_state: body.company_state !== undefined
+        ? (canonicalState(body.company_state) ?? (body.company_state?.trim() || null))
+        : ((currentSettings as { company_state?: string | null }).company_state ?? null),
       default_currency: body.default_currency?.trim() || 'INR',
       default_tax_rate: parseFloat(body.default_tax_rate) || 18.0,
       updated_at: new Date().toISOString(),

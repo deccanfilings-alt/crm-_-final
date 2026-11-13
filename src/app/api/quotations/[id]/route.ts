@@ -83,6 +83,18 @@ export async function PATCH(
     if (fetchErr || !existing) {
       return NextResponse.json({ error: 'Quotation not found' }, { status: 404 });
     }
+    // Invoiced and cancelled quotations are read-only.
+    if (existing.status === 'invoiced' || existing.status === 'cancelled') {
+      return NextResponse.json(
+        {
+          error:
+            existing.status === 'invoiced'
+              ? 'This quotation is already invoiced. Edit the invoice, or move it back to the quotation stage first.'
+              : 'This quotation is cancelled. Change its status back to Draft or Final to edit it.',
+        },
+        { status: 409 },
+      );
+    }
 
     const body = await request.json();
     const {
@@ -143,22 +155,12 @@ export async function PATCH(
     if (signature_url !== undefined) updates.signature_url = signature_url?.trim() || null;
     if (stamp_url !== undefined) updates.stamp_url = stamp_url?.trim() || null;
 
-    // A client accepted/rejected different terms — once prices or items
-    // change, the quote is back with the client ("sent") until they
-    // respond again. An expired quote whose validity is extended is live
-    // again too.
+    // The client accepted / rejected different terms: once prices or
+    // items change, that answer no longer applies — they must respond again.
     const commercial = isCommercialChange(existing, { items, discount_type, discount_value, tax_type, tax_rate });
-    if (commercial && (existing.status === 'accepted' || existing.status === 'rejected')) {
-      updates.status = 'sent';
+    if (commercial && (existing.accepted_at || existing.rejected_at)) {
       updates.accepted_at = null;
       updates.rejected_at = null;
-    }
-    if (
-      existing.status === 'expired' &&
-      typeof valid_until === 'string' &&
-      valid_until >= new Date().toISOString().slice(0, 10)
-    ) {
-      updates.status = 'sent';
     }
 
     if (Array.isArray(items)) {
@@ -233,7 +235,8 @@ export async function PATCH(
       success: true,
       quotation: updated,
       revision,
-      reopened: updates.status === 'sent' && existing.status !== 'sent',
+      // Client's earlier accept/reject was cleared by a price change.
+      reopened: Boolean(existing.accepted_at || existing.rejected_at) && updates.accepted_at === null,
       linked_invoices: linkedInvoices ?? 0,
     });
   } catch (err: any) {

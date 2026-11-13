@@ -28,7 +28,6 @@ import {
   Printer,
   Send,
 } from "lucide-react";
-import { QuotationBuilderModal } from "@/components/quotations/quotation-builder-modal";
 import { CURRENCIES } from "@/lib/currency";
 import { InstagramIcon as Instagram, FacebookIcon as Facebook } from "@/components/icons/social-icons";
 import { Button } from "@/components/ui/button";
@@ -69,8 +68,6 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
-  const [editingQuotation, setEditingQuotation] = useState<Quotation | null>(null);
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
@@ -256,7 +253,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
       setTags(mapped);
     }
     if (profilesRes.data) setProfiles(profilesRes.data);
-    if (quotesRes?.data) setQuotations(quotesRes.data as Quotation[]);
+    if (quotesRes?.data) setQuotations((quotesRes.data as Array<Quotation & { deleted_at?: string | null }>).filter((q) => !q.deleted_at));
   }, [contact, accountId]);
 
   useEffect(() => {
@@ -715,7 +712,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
                 variant="ghost"
                 size="icon"
                 className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                onClick={() => { setEditingQuotation(null); setQuoteModalOpen(true); }}
+                onClick={() => window.open(`/billing/quotations/new?contact=${contact.id}${conversation?.id ? `&conversation=${conversation.id}` : ""}`, "_blank")}
                 title="Create Quotation"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -726,7 +723,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
               {quotations.length === 0 ? (
                 <button
                   type="button"
-                  onClick={() => { setEditingQuotation(null); setQuoteModalOpen(true); }}
+                  onClick={() => window.open(`/billing/quotations/new?contact=${contact.id}${conversation?.id ? `&conversation=${conversation.id}` : ""}`, "_blank")}
                   className="w-full rounded-lg border border-dashed border-border px-3 py-2 text-center text-xs text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors"
                 >
                   + Create quotation for this contact
@@ -752,13 +749,15 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
 
                     <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
                       <span className={`capitalize px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                        q.status === 'accepted'
+                        q.status === 'invoiced'
                           ? 'bg-emerald-500/15 text-emerald-600'
-                          : q.status === 'sent'
+                          : q.status === 'final'
                           ? 'bg-sky-500/15 text-sky-600'
+                          : q.status === 'cancelled'
+                          ? 'bg-rose-500/15 text-rose-600'
                           : 'bg-muted-foreground/15 text-muted-foreground'
                       }`}>
-                        {q.status}
+                        {q.status}{q.accepted_at && q.status === 'final' ? ' · accepted' : ''}
                       </span>
 
                       <div className="flex items-center gap-1">
@@ -767,10 +766,7 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
                           size="icon"
                           className="h-6 w-6 text-muted-foreground hover:text-primary"
                           title="Edit Quotation"
-                          onClick={() => {
-                            setEditingQuotation(q);
-                            setQuoteModalOpen(true);
-                          }}
+                          onClick={() => window.open(`/billing/quotations/${q.id}/edit`, "_blank")}
                         >
                           <Pencil className="h-3 w-3" />
                         </Button>
@@ -1184,21 +1180,6 @@ export function ContactSidebar({ contact, conversation, onContactUpdate }: Conta
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Quotation Builder & Editor Modal */}
-      <QuotationBuilderModal
-        open={quoteModalOpen}
-        onOpenChange={(open) => {
-          setQuoteModalOpen(open);
-          if (!open) setEditingQuotation(null);
-        }}
-        initialContact={contact}
-        initialConversationId={conversation?.id || null}
-        quotationToEdit={editingQuotation}
-        onSuccess={() => {
-          fetchContactData();
-        }}
-      />
 
       {/* Quick Edit Contact Details Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

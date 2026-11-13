@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getQuotationSettings } from '@/lib/quotations/settings';
-import { renderQuotationHtml } from '@/lib/quotations/quotation-template';
+import { buildQuotationDocument, renderQuotationDocumentHtml } from '@/lib/billing/quotation-document';
 
 export async function GET(
   request: Request,
@@ -28,9 +28,10 @@ export async function GET(
 
     const { data: quote, error: quoteError } = await supabase
       .from('quotations')
-      .select('*, items:quotation_items(*)')
+      .select('*, items:quotation_items(*), ledger_lines:quotation_ledger_lines(*)')
       .eq('id', id)
       .eq('account_id', profile.account_id)
+      .is('deleted_at', null)
       .single();
 
     if (quoteError || !quote) {
@@ -38,7 +39,7 @@ export async function GET(
     }
 
     const settings = await getQuotationSettings(supabase, profile.account_id);
-    const html = renderQuotationHtml(quote, settings);
+    const html = renderQuotationDocumentHtml(buildQuotationDocument(quote, settings), { printBar: true });
 
     return new NextResponse(html, {
       status: 200,
