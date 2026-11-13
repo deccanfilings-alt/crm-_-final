@@ -102,17 +102,8 @@ const customizableNavItems: NavItem[] = [
   { href: "/team-chat", label: "Team Chat", icon: UsersRound },
   { href: "/contacts", label: "Contacts", icon: Users },
   { href: "/pipelines", label: "Pipelines", icon: GitBranch },
-  {
-    href: "/billing",
-    label: "Billing",
-    icon: Receipt,
-    activePrefixes: ["/billing", "/quotations"],
-    children: [
-      { href: "/billing/quotations", label: "Quotation" },
-      { href: "/quotations", label: "Invoice" },
-      { href: "/settings?tab=quotations", label: "Settings", activePrefixes: [] },
-    ],
-  },
+  // One item: the billing page has Quotations / Proforma / Tax Invoices tabs.
+  { href: "/billing", label: "Billing", icon: Receipt, target: "/billing/quotations", activePrefixes: ["/billing", "/quotations"] },
   { href: "/broadcasts", label: "Broadcasts", icon: Megaphone },
   { href: "/action-items", label: "My Action Items", icon: CheckSquare },
   { href: "/automations", label: "Automations", icon: Zap },

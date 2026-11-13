@@ -3,9 +3,7 @@
 import Link from "next/link";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useState } from "react";
-import { usePathname } from "next/navigation";
-import { ChevronDown, GripVertical, Pin, LayoutDashboard } from "lucide-react";
+import { GripVertical, Pin, LayoutDashboard } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -16,8 +14,8 @@ export interface NavItem {
   beta?: boolean;
   /** Paths that make this item active (default: href). */
   activePrefixes?: string[];
-  /** A collapsible group, e.g. Billing -> Quotation / Invoice / Settings. */
-  children?: Array<{ href: string; label: string; activePrefixes?: string[] }>;
+  /** Where the link goes when it differs from the id (href). */
+  target?: string;
 }
 
 interface SortableNavItemProps {
@@ -55,12 +53,7 @@ export function SortableNavItem({
     transition,
   };
 
-  const pathname = usePathname();
-  const isGroup = !!item.children?.length && !isCollapsed;
-  const [open, setOpen] = useState(isActive);
-  const expanded = open || isActive;
-  // Collapsed sidebar: a group icon goes straight to its first page.
-  const linkHref = item.children?.length ? item.children[0].href : item.href;
+  const linkHref = item.target ?? item.href;
 
   const linkContent = (
     <div
@@ -95,19 +88,7 @@ export function SortableNavItem({
         </button>
       )}
 
-      {/* Main Link Area (a group header toggles instead of navigating) */}
-      {isGroup ? (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={expanded}
-          className="flex items-center flex-1 min-w-0 gap-2.5 text-left cursor-pointer"
-        >
-          <item.icon className={cn("h-4 w-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
-          <span className="flex-1 truncate tracking-tight">{item.label}</span>
-          <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 opacity-60 transition-transform", expanded && "rotate-180")} />
-        </button>
-      ) : (
+      {/* Main Link Area */}
       <Link
         href={linkHref}
         className={cn(
@@ -155,7 +136,6 @@ export function SortableNavItem({
           </span>
         )}
       </Link>
-      )}
 
       {/* Pin button toggle */}
       {!isCollapsed && (
@@ -209,28 +189,6 @@ export function SortableNavItem({
         </Tooltip>
       ) : (
         linkContent
-      )}
-      {isGroup && expanded && (
-        <ul className="mt-0.5 ml-[22px] flex flex-col gap-0.5 border-l border-border/70 pl-2">
-          {item.children!.map((c) => {
-            const childPath = c.href.split("?")[0];
-            const active = (c.activePrefixes ?? [childPath]).some((p) => pathname === p || pathname.startsWith(`${p}/`));
-            return (
-              <li key={c.href}>
-                <Link
-                  href={c.href}
-                  className={cn(
-                    "flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] transition-colors",
-                    active ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                  )}
-                >
-                  <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-primary" : "bg-muted-foreground/40")} />
-                  {c.label}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
       )}
     </li>
   );
