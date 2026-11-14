@@ -14,6 +14,7 @@ export async function GET(
       .from('invoices')
       .select('*, items:invoice_items(*)')
       .eq('public_token', token)
+      .is('deleted_at', null)
       .single();
 
     if (error || !invoice) {

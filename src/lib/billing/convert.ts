@@ -1,6 +1,7 @@
 // ============================================================
 // Convert a quotation into a proforma or tax invoice (single or bulk).
-// Copies client, company, items and totals; the quotation becomes
+// Copies client, company, Billed From / To, items (SAC, discounts, GST),
+// ledger lines and the CGST/SGST/IGST split; the quotation becomes
 // "Invoiced" and remembers its invoice.
 // ============================================================
 
@@ -40,7 +41,7 @@ export async function convertQuotationToInvoice(
 ): Promise<ConvertResult> {
   const { data: quote, error: quoteErr } = await supabase
     .from("quotations")
-    .select("*, items:quotation_items(*)")
+    .select("*, items:quotation_items(*), ledger_lines:quotation_ledger_lines(*)")
     .eq("id", quoteId)
     .maybeSingle();
   if (quoteErr || !quote || quote.deleted_at) return { ok: false, status: 404, error: "Quotation not found" };
@@ -81,6 +82,15 @@ export async function convertQuotationToInvoice(
     tax_rate: quote.tax_rate,
     tax_amount: quote.tax_amount,
     total_amount: total,
+    cgst_amount: quote.cgst_amount ?? 0,
+    sgst_amount: quote.sgst_amount ?? 0,
+    igst_amount: quote.igst_amount ?? 0,
+    ledger_adjustments_total: quote.ledger_adjustments_total ?? 0,
+    round_off: quote.round_off ?? 0,
+    firm_id: quote.firm_id ?? null,
+    billed_from: quote.billed_from ?? null,
+    billed_to: quote.billed_to ?? null,
+    place_of_supply: quote.place_of_supply ?? null,
 
     paid_amount: paidAmount,
     balance_amount: Math.max(0, Math.round((total - paidAmount) * 100) / 100),
@@ -142,6 +152,16 @@ export async function convertQuotationToInvoice(
         tax_rate: it.gst_rate ?? it.tax_rate,
         // After any line discount, so the lines add up to the subtotal.
         total: it.taxable_amount ?? it.total,
+        particular_id: it.particular_id ?? null,
+        service_name: it.service_name ?? null,
+        sac_code: it.sac_code ?? null,
+        discount_value: it.discount_value ?? 0,
+        discount_type: it.discount_type ?? "INR",
+        gst_rate: it.gst_rate ?? it.tax_rate ?? 0,
+        taxable_amount: it.taxable_amount ?? it.total ?? null,
+        tax_amount: it.tax_amount ?? null,
+        line_total: it.line_total ?? null,
+        linked_task_ids: it.linked_task_ids ?? [],
       })),
     );
     if (itemsErr) {
@@ -151,6 +171,21 @@ export async function convertQuotationToInvoice(
       await supabase.from("invoices").delete().eq("id", invoice.id);
       return { ok: false, status: 500, error: "Could not copy the line items — nothing was converted" };
     }
+  }
+
+  const ledgers = [...(quote.ledger_lines ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  if (ledgers.length) {
+    const { error: ledErr } = await supabase.from("invoice_ledger_lines").insert(
+      ledgers.map((l: Record<string, unknown>, idx: number) => ({
+        invoice_id: invoice.id,
+        ledger_id: l.ledger_id ?? null,
+        ledger_name: l.ledger_name,
+        amount: l.amount,
+        position: idx,
+      })),
+    );
+    // Totals already include them; the lines are only for display.
+    if (ledErr) console.warn("[billing/convert] ledger lines not copied:", ledErr.message);
   }
 
   const { error: qErr } = await supabase

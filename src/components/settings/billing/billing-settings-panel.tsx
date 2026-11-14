@@ -30,6 +30,7 @@ export function BillingSettingsPanel() {
   const isAdmin = accountRole === "owner" || accountRole === "admin";
   const canAddParticulars = isAdmin || accountRole === "agent";
   const [tab, setTab] = useState<TabId>("company");
+  const [seriesType, setSeriesType] = useState<"quotation" | "proforma" | "tax_invoice">("quotation");
 
   return (
     <div className="space-y-5">
@@ -60,7 +61,34 @@ export function BillingSettingsPanel() {
       </div>
 
       {tab === "company" && <QuotationSettingsPanel embedded />}
-      {tab === "series" && <SeriesTab canEdit={isAdmin} docType="quotation" />}
+      {tab === "series" && (
+        <div className="space-y-3">
+          <div className="inline-flex rounded-lg border p-0.5 text-sm" role="tablist" aria-label="Series for">
+            {(
+              [
+                ["quotation", "Quotation"],
+                ["proforma", "Proforma Invoice"],
+                ["tax_invoice", "Tax Invoice"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={seriesType === v}
+                onClick={() => setSeriesType(v)}
+                className={cn(
+                  "rounded-md px-3 py-1 transition-colors cursor-pointer",
+                  seriesType === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <SeriesTab key={seriesType} canEdit={isAdmin} docType={seriesType} />
+        </div>
+      )}
       {tab === "particulars" && <ParticularsTab canEdit={canAddParticulars} />}
       {tab === "ledgers" && <LedgersTab canEdit={isAdmin} />}
       {tab === "tax" && <TaxRatesTab canEdit={isAdmin} />}

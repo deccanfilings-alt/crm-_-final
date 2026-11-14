@@ -1,7 +1,9 @@
 "use client";
 
 // ============================================================
-// Create / Update Quotation — WebLedger-style full-page form.
+// Create / Update Quotation, Proforma or Tax Invoice — WebLedger-style
+// full-page form (one form for all three; `kind` picks labels, series,
+// due date vs valid until, and the payment block for tax invoices).
 //
 //   header   < Create Quotation · Cancel · Save ▾ (Draft / Final)
 //   left     Quotation details (firm, series, date, number, valid until)
@@ -68,16 +70,39 @@ function splitNumber(number: string, running: number | null): { prefix: string; 
   return m ? { prefix: m[1], running: m[2], suffix: m[3] } : { prefix: number, running: "", suffix: "" };
 }
 
+export type DocKind = "quotation" | "proforma" | "tax_invoice";
+
+const DOC: Record<DocKind, { name: string; short: string; api: string }> = {
+  quotation: { name: "Quotation", short: "Quo.", api: "/api/billing/quotations" },
+  proforma: { name: "Proforma Invoice", short: "Inv.", api: "/api/billing/invoices" },
+  tax_invoice: { name: "Tax Invoice", short: "Inv.", api: "/api/billing/invoices" },
+};
+
+const PAYMENT_METHODS = [
+  { value: "upi", label: "UPI" },
+  { value: "bank_transfer", label: "Bank transfer" },
+  { value: "card", label: "Card" },
+  { value: "cheque", label: "Cheque" },
+  { value: "cash", label: "Cash" },
+];
+
 interface Props {
+  /** quotation (default), proforma or tax_invoice — same form, same engine. */
+  kind?: DocKind;
   quotationId?: string;
+  invoiceId?: string;
   initialContactId?: string | null;
   conversationId?: string | null;
   dealId?: string | null;
 }
 
-export function QuotationForm({ quotationId, initialContactId, conversationId, dealId }: Props) {
+export function QuotationForm({ kind = "quotation", quotationId, invoiceId, initialContactId, conversationId, dealId }: Props) {
   const router = useRouter();
-  const isEdit = !!quotationId;
+  const isInvoice = kind !== "quotation";
+  const docId = isInvoice ? invoiceId : quotationId;
+  const isEdit = !!docId;
+  const L = DOC[kind];
+  const listHref = isInvoice ? `/billing/invoices?type=${kind}` : "/billing/quotations";
 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,7 +131,14 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
     sent: boolean;
     revision: number;
     accepted: boolean;
+    paid: number;
   } | null>(null);
+
+  // New tax invoice: payment already received?
+  const [paymentReceived, setPaymentReceived] = useState(true);
+  const [paymentMethod, setPaymentMethod] = useState("upi");
+  const [paymentRef, setPaymentRef] = useState("");
+  const [paidOn, setPaidOn] = useState(todayIST());
 
   // Parties
   const [client, setClient] = useState<Client | null>(null);
@@ -138,10 +170,10 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
     (async () => {
       try {
         const [fdRes, pRes, qRes, cRes] = await Promise.all([
-          fetch(`/api/billing/quotations/form-data?date=${todayIST()}`),
+          fetch(`/api/billing/quotations/form-data?date=${todayIST()}&type=${kind}`),
           fetch("/api/billing/particulars"),
-          quotationId ? fetch(`/api/billing/quotations/${quotationId}`) : Promise.resolve(null),
-          !quotationId && initialContactId ? fetch(`/api/billing/clients?id=${initialContactId}`) : Promise.resolve(null),
+          docId ? fetch(`${L.api}/${docId}`) : Promise.resolve(null),
+          !docId && initialContactId ? fetch(`/api/billing/clients?id=${initialContactId}`) : Promise.resolve(null),
         ]);
         const fd = await fdRes.json().catch(() => ({}));
         if (!fdRes.ok) throw new Error(fd.error ?? "Could not load the form");
@@ -159,24 +191,26 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
 
         if (qRes) {
           const qj = await qRes.json().catch(() => ({}));
-          if (!qRes.ok) throw new Error(qj.error ?? "Quotation not found");
-          const q = qj.quotation;
+          if (!qRes.ok) throw new Error(qj.error ?? `${L.name} not found`);
+          const q = isInvoice ? qj.invoice : qj.quotation;
           if (cancelled) return;
-          const parts = splitNumber(q.quote_number, q.running_no);
+          const number: string = isInvoice ? q.invoice_number : q.quote_number;
+          const parts = splitNumber(number, q.running_no);
           setExisting({
             status: q.status,
-            quote_number: q.quote_number,
+            quote_number: number,
             series_id: q.series_id,
             sent: q.status !== "draft" || !!q.sent_at,
             revision: Number(q.revision ?? 0),
             accepted: !!q.accepted_at,
+            paid: Number(q.paid_amount ?? 0),
           });
           setSeriesId(q.series_id ?? "");
           setNumPrefix(parts.prefix);
           setNumSuffix(parts.suffix);
           setRunningNo(parts.running);
           setIssueDate(q.issue_date ?? todayIST());
-          setValidUntil(q.valid_until ?? "");
+          setValidUntil((isInvoice ? q.due_date : q.valid_until) ?? "");
           setTitle(q.title ?? "");
           setNotes(q.notes ?? "");
           setTerms(q.terms ?? "");
@@ -267,6 +301,7 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
           setTerms(f.terms_and_conditions ?? "");
           setRows([blankItem(Number(f.default_gst_rate) || 18)]);
           if (f.credit_period_days > 0) setValidUntil(addDays(todayIST(), f.credit_period_days));
+          else if (isInvoice) setValidUntil(addDays(todayIST(), 7));
           if (cRes) {
             const cj = await cRes.json().catch(() => ({}));
             const c = (cj.clients ?? [])[0] as Client | undefined;
@@ -286,7 +321,7 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quotationId]);
+  }, [docId, kind]);
 
   // ---------------- live totals ----------------
   const totals = useMemo(
@@ -376,7 +411,16 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
         series_id: seriesId || null,
         running_no: numberChangesOnSave && numberTouched && runningNo !== "" ? Number(runningNo) : null,
         issue_date: issueDate,
-        valid_until: validUntil || null,
+        ...(isInvoice
+          ? {
+              invoice_type: kind,
+              due_date: kind === "tax_invoice" && !isEdit && paymentReceived ? null : validUntil || null,
+              payment_received: kind === "tax_invoice" && !isEdit ? paymentReceived : false,
+              payment_method: paymentMethod,
+              payment_reference: paymentRef || null,
+              paid_on: paidOn || null,
+            }
+          : { valid_until: validUntil || null }),
         contact_id: client?.id ?? null,
         conversation_id: conversationId ?? null,
         deal_id: dealId ?? null,
@@ -406,26 +450,28 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
         save_client_details: saveClient,
         revision_reason: revisionReason || null,
       };
-      const res = await fetch(isEdit ? `/api/billing/quotations/${quotationId}` : "/api/billing/quotations", {
+      const res = await fetch(isEdit ? `${L.api}/${docId}` : L.api, {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(json.error ?? "Could not save the quotation");
+        toast.error(json.error ?? `Could not save the ${L.name.toLowerCase()}`);
         return;
       }
-      const q = json.quotation as { quote_number: string; status: string };
+      const q = isInvoice
+        ? { quote_number: json.invoice.invoice_number as string, status: json.invoice.status as string }
+        : (json.quotation as { quote_number: string; status: string });
       toast.success(
         isEdit
           ? json.revision
             ? `${q.quote_number} updated — now Rev ${json.revision}`
             : `${q.quote_number} updated`
-          : `Quotation ${q.quote_number} saved as ${q.status === "final" ? "Final" : "Draft"}`,
+          : `${L.name} ${q.quote_number} saved${q.status === "draft" ? " as Draft" : isInvoice ? "" : " as Final"}`,
       );
       if (json.reopened) toast.info("Prices changed, so the client's earlier acceptance was cleared.");
-      router.push("/billing/quotations");
+      router.push(listHref);
       router.refresh();
     } catch {
       toast.error("Network error — please try again");
@@ -446,22 +492,22 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
     return (
       <div className="mx-auto max-w-xl space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-6 text-sm">
         <p>{loadError}</p>
-        <Link href="/billing/quotations" className={buttonVariants({ variant: "outline", size: "sm" })}>
-          Back to quotations
+        <Link href={listHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Back
         </Link>
       </div>
     );
   }
 
   const taxed = firm?.tax_type !== "NONE";
-  const heading = isEdit ? `Update Quotation ${existing?.quote_number ?? ""}` : "Create Quotation";
+  const heading = isEdit ? `Update ${L.name} ${existing?.quote_number ?? ""}` : `Create ${L.name}`;
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 pb-10">
       {/* Header bar */}
       <div className="sticky top-0 z-20 -mx-4 flex flex-wrap items-center justify-between gap-2 border-b bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
         <div className="flex min-w-0 items-center gap-2">
-          <Link href="/billing/quotations" aria-label="Back to quotations" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-8 w-8 p-0")}>
+          <Link href={listHref} aria-label="Back" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-8 w-8 p-0")}>
             <ChevronLeft className="h-5 w-5" />
           </Link>
           <h2 className="truncate text-lg font-semibold">{heading}</h2>
@@ -473,11 +519,11 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/billing/quotations" className={buttonVariants({ variant: "outline", size: "sm" })}>
+          <Link href={listHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
             Cancel
           </Link>
           {!readOnly &&
-            (existing?.status === "final" ? (
+            (existing && existing.status !== "draft" ? (
               <Button size="sm" onClick={() => save("final")} disabled={saving}>
                 {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                 Save
@@ -514,16 +560,17 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
       {readOnly && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
           <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-          This quotation is {existing?.status} and can&apos;t be edited.
+          This {L.name.toLowerCase()} is {existing?.status} and can&apos;t be edited.
         </div>
       )}
 
       {existing?.sent && !readOnly && (
         <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
           <p>
-            This quotation has already gone to the client. Saving creates{" "}
+            This {L.name.toLowerCase()} has already gone to the client. Saving creates{" "}
             <span className="font-semibold">Rev {existing.revision + 1}</span>; the previous version is kept in the history.
             {existing.accepted && " The client accepted it — changing prices clears that acceptance."}
+            {existing.paid > 0 && ` ₹${existing.paid.toLocaleString("en-IN")} is already paid, so the total can't go below that.`}
           </p>
           <Input
             value={revisionReason}
@@ -539,7 +586,7 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
         {/* Left column */}
         <div className="space-y-4">
           <section className="rounded-xl border bg-card p-4">
-            <h3 className="mb-3 text-sm font-semibold">Quotation details</h3>
+            <h3 className="mb-3 text-sm font-semibold">{L.name} details</h3>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5">
                 <Label className="text-xs">Firm Name *</Label>
@@ -547,7 +594,7 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="q-series" className="text-xs">
-                  Quotation Series *
+                  {L.name} Series *
                 </Label>
                 <select
                   id="q-series"
@@ -567,13 +614,13 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="q-date" className="text-xs">
-                  Quo. Date *
+                  {L.short} Date *
                 </Label>
                 <Input id="q-date" type="date" className="h-9" value={issueDate} disabled={readOnly} onChange={(e) => onDateChange(e.target.value)} />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="q-no" className="text-xs">
-                  Quotation No.
+                  {L.name} No.
                 </Label>
                 <div className="flex h-9 items-center overflow-hidden rounded-md border border-input">
                   {numPrefix && <span className="bg-muted px-2 font-mono text-xs leading-9 text-muted-foreground">{numPrefix}</span>}
@@ -596,9 +643,17 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="q-valid" className="text-xs">
-                  Valid Until
+                  {isInvoice ? "Due Date" : "Valid Until"}
                 </Label>
-                <Input id="q-valid" type="date" className="h-9" min={issueDate} value={validUntil} disabled={readOnly} onChange={(e) => setValidUntil(e.target.value)} />
+                <Input
+                  id="q-valid"
+                  type="date"
+                  className="h-9"
+                  min={issueDate}
+                  value={kind === "tax_invoice" && !isEdit && paymentReceived ? "" : validUntil}
+                  disabled={readOnly || (kind === "tax_invoice" && !isEdit && paymentReceived)}
+                  onChange={(e) => setValidUntil(e.target.value)}
+                />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="q-title" className="text-xs">
@@ -615,6 +670,39 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
             <ClientPicker value={client} onChange={onClient} disabled={readOnly} />
             {showErrors && !billedTo && <p className="mt-1 text-xs text-destructive">Pick a client.</p>}
           </section>
+
+          {kind === "tax_invoice" && !isEdit && (
+            <section className="space-y-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+              <label className="flex items-center gap-2 text-sm font-semibold">
+                <input type="checkbox" className="h-4 w-4 accent-emerald-600" checked={paymentReceived} onChange={(e) => setPaymentReceived(e.target.checked)} />
+                Payment already received (mark PAID)
+              </label>
+              {paymentReceived ? (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="pay-method" className="text-xs">Payment method</Label>
+                    <select id="pay-method" className="h-9 rounded-md border border-input bg-background px-2 text-sm" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                      {PAYMENT_METHODS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="pay-ref" className="text-xs">UTR / reference</Label>
+                    <Input id="pay-ref" className="h-9" value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="pay-on" className="text-xs">Paid on</Label>
+                    <Input id="pay-on" type="date" className="h-9" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Saved as Unpaid with a due date; record the payment when it arrives.</p>
+              )}
+            </section>
+          )}
         </div>
 
         {/* Right column */}
@@ -673,7 +761,7 @@ export function QuotationForm({ quotationId, initialContactId, conversationId, d
             <Label htmlFor="q-notes" className="text-xs">
               Notes
             </Label>
-            <Textarea id="q-notes" rows={3} value={notes} disabled={readOnly} onChange={(e) => setNotes(e.target.value)} placeholder="Shown on the quotation" />
+            <Textarea id="q-notes" rows={3} value={notes} disabled={readOnly} onChange={(e) => setNotes(e.target.value)} placeholder={`Shown on the ${L.name.toLowerCase()}`} />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="q-terms" className="text-xs">

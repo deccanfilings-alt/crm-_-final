@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { dbErrorResponse, defaultFirmId } from "@/lib/billing/api";
 
-const DOC_TYPES = ["quotation", "invoice", "receipt"] as const;
+const DOC_TYPES = ["quotation", "proforma", "tax_invoice", "receipt"] as const;
 type DocType = (typeof DOC_TYPES)[number];
 const isDocType = (v: unknown): v is DocType => typeof v === "string" && (DOC_TYPES as readonly string[]).includes(v);
 

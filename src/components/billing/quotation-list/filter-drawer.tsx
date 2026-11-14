@@ -20,18 +20,22 @@ interface Props {
   onOpenChange: (o: boolean) => void;
   value: ListFilters;
   onApply: (f: Applied) => void;
+  /** e.g. "Quotation Date" / "Invoice Date". */
+  dateLabel?: string;
+  description?: string;
 }
 
-export function FilterDrawer({ open, onOpenChange, value, onApply }: Props) {
+export function FilterDrawer({ open, onOpenChange, value, onApply, dateLabel = "Quotation Date", description = "Narrow down the quotation list." }: Props) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-sm">
         <SheetHeader>
           <SheetTitle>Filters</SheetTitle>
-          <SheetDescription>Narrow down the quotation list.</SheetDescription>
+          <SheetDescription>{description}</SheetDescription>
         </SheetHeader>
         {open && (
           <FilterForm
+            dateLabel={dateLabel}
             initial={value}
             onApply={(f) => {
               onApply(f);
@@ -44,7 +48,7 @@ export function FilterDrawer({ open, onOpenChange, value, onApply }: Props) {
   );
 }
 
-function FilterForm({ initial, onApply }: { initial: ListFilters; onApply: (f: Applied) => void }) {
+function FilterForm({ initial, onApply, dateLabel }: { initial: ListFilters; onApply: (f: Applied) => void; dateLabel: string }) {
   const [client, setClient] = useState<ListFilters["client"]>(initial.client);
   const [group, setGroup] = useState(initial.group);
   const [from, setFrom] = useState(initial.from);
@@ -86,11 +90,11 @@ function FilterForm({ initial, onApply }: { initial: ListFilters; onApply: (f: A
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="f-from">From Quotation Date</Label>
+          <Label htmlFor="f-from">From {dateLabel}</Label>
           <Input id="f-from" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="f-to">To Quotation Date</Label>
+          <Label htmlFor="f-to">To {dateLabel}</Label>
           <Input id="f-to" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
         </div>
       </div>

@@ -35,7 +35,7 @@ interface Series {
 
 const fmtDate = (d: string | null) => (d ? d.split("-").reverse().join("-") : "—");
 
-export function SeriesTab({ canEdit, docType = "quotation" }: { canEdit: boolean; docType?: "quotation" | "invoice" | "receipt" }) {
+export function SeriesTab({ canEdit, docType = "quotation" }: { canEdit: boolean; docType?: "quotation" | "proforma" | "tax_invoice" | "receipt" }) {
   const list = useBillingFetch<Series[]>(`/api/billing/series?doc_type=${docType}`, (j) => (j.series as Series[]) ?? [], []);
   const [editing, setEditing] = useState<Series | null>(null);
   const [rows, setRows] = useState<Period[]>([]);
@@ -154,7 +154,7 @@ export function SeriesTab({ canEdit, docType = "quotation" }: { canEdit: boolean
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          How {docType} numbers are made: <span className="font-mono">prefix + running number + suffix</span>. Add a dated row per
+          How {docType.replace("_", " ")} numbers are made: <span className="font-mono">prefix + running number + suffix</span>. Add a dated row per
           financial year to restart numbering each year.
         </p>
         {canEdit && (

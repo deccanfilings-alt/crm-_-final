@@ -87,6 +87,15 @@ export async function POST(
         tax_rate: invoice.tax_rate,
         tax_amount: invoice.tax_amount,
         total_amount: invoice.total_amount,
+        cgst_amount: invoice.cgst_amount ?? 0,
+        sgst_amount: invoice.sgst_amount ?? 0,
+        igst_amount: invoice.igst_amount ?? 0,
+        ledger_adjustments_total: invoice.ledger_adjustments_total ?? 0,
+        round_off: invoice.round_off ?? 0,
+        firm_id: invoice.firm_id ?? null,
+        billed_from: invoice.billed_from ?? null,
+        billed_to: invoice.billed_to ?? null,
+        place_of_supply: invoice.place_of_supply ?? null,
 
         paid_amount: amountPaid,
         balance_amount: remainingBalance,
@@ -163,8 +172,29 @@ export async function POST(
             unit_price: it.unit_price,
             tax_rate: it.tax_rate,
             total: it.total,
+            particular_id: it.particular_id ?? null,
+            service_name: it.service_name ?? null,
+            sac_code: it.sac_code ?? null,
+            discount_value: it.discount_value ?? 0,
+            discount_type: it.discount_type ?? 'INR',
+            gst_rate: it.gst_rate ?? it.tax_rate ?? 0,
+            taxable_amount: it.taxable_amount ?? it.total ?? null,
+            tax_amount: it.tax_amount ?? null,
+            line_total: it.line_total ?? null,
+            linked_task_ids: it.linked_task_ids ?? [],
           }));
           await supabase.from('invoice_items').insert(tiItems);
+        }
+        // Ledger lines (totals already include them).
+        const { data: led } = await supabase
+          .from('invoice_ledger_lines')
+          .select('ledger_id, ledger_name, amount, position')
+          .eq('invoice_id', invoice.id);
+        if (led?.length) {
+          const { error: ledErr } = await supabase
+            .from('invoice_ledger_lines')
+            .insert(led.map((l: any) => ({ ...l, invoice_id: newTi.id })));
+          if (ledErr) console.warn('[record-payment] ledger lines not copied:', ledErr.message);
         }
       }
     }

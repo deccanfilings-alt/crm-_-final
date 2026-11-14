@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { formatInvoiceNumber } from '@/lib/quotations/numbering';
-import { renderInvoiceHtml } from '@/lib/invoices/invoice-template';
+import { buildQuotationDocument, renderQuotationDocumentHtml } from '@/lib/billing/quotation-document';
+
+const renderInvoiceHtml = (inv: unknown, settings: unknown) => renderQuotationDocumentHtml(buildQuotationDocument(inv, settings), {});
 import type { Invoice, QuotationSettings } from '@/types';
 
 describe('2-Stage Invoicing System', () => {
@@ -138,9 +140,9 @@ describe('2-Stage Invoicing System', () => {
     expect(html).toContain('DF-TI-1001');
     expect(html).toContain('PAID');
     expect(html).toContain('UTR428910293812');
-    expect(html).toContain('Payment Receipt Acknowledgement');
-    expect(html).toContain('Balance Due :');
-    expect(html).toContain('INR 0.00');
+    expect(html).toContain('Payment received:');
+    expect(html).toContain('Remaining Amount');
+    expect(html).toContain('₹ 0.00');
     expect(html).toContain('Certified that the particulars given above are true and correct');
   });
 });

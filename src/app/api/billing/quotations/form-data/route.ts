@@ -1,4 +1,4 @@
-// GET /api/billing/quotations/form-data?date=YYYY-MM-DD
+// GET /api/billing/quotations/form-data?date=YYYY-MM-DD&type=quotation|proforma|tax_invoice
 // Everything the Create / Update Quotation form needs in one call:
 // the firm (Issued By), its quotation series with the next number,
 // GST rates and ledgers.
@@ -11,7 +11,10 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 export async function GET(request: Request) {
   try {
     const ctx = await requireRole("viewer");
-    const dateParam = new URL(request.url).searchParams.get("date");
+    const sp = new URL(request.url).searchParams;
+    const dateParam = sp.get("date");
+    const typeParam = sp.get("type");
+    const docType = typeParam === "proforma" || typeParam === "tax_invoice" ? typeParam : "quotation";
     const date = dateParam && DATE.test(dateParam) ? dateParam : new Date().toISOString().slice(0, 10);
 
     const { data: firm, error: firmErr } = await ctx.supabase
@@ -33,7 +36,7 @@ export async function GET(request: Request) {
         .from("billing_series")
         .select("id, name, is_default")
         .eq("firm_id", firm.id)
-        .eq("doc_type", "quotation")
+        .eq("doc_type", docType)
         .order("created_at"),
       ctx.supabase.from("billing_tax_rates").select("rate").eq("account_id", ctx.accountId).eq("kind", "GST").order("rate"),
       ctx.supabase.from("billing_ledgers").select("id, name, ledger_group").eq("account_id", ctx.accountId).eq("is_active", true).order("name"),

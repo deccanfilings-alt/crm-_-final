@@ -13,7 +13,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface Props {
+  /** The document (quotation or invoice) — id + its number. */
   quotation: { id: string; quote_number: string } | null;
+  kind?: "quotation" | "invoice";
   onOpenChange: (o: boolean) => void;
   onSent: () => void;
 }
@@ -26,17 +28,18 @@ interface Defaults {
   message: string;
 }
 
-export function EmailDialog({ quotation, onOpenChange, onSent }: Props) {
+export function EmailDialog({ quotation, kind = "quotation", onOpenChange, onSent }: Props) {
+  const base = kind === "invoice" ? "/api/billing/invoices" : "/api/billing/quotations";
   return (
     <Dialog open={!!quotation} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        {quotation && <EmailForm key={quotation.id} quotation={quotation} onClose={() => onOpenChange(false)} onSent={onSent} />}
+        {quotation && <EmailForm key={quotation.id} base={base} quotation={quotation} onClose={() => onOpenChange(false)} onSent={onSent} />}
       </DialogContent>
     </Dialog>
   );
 }
 
-function EmailForm({ quotation, onClose, onSent }: { quotation: { id: string; quote_number: string }; onClose: () => void; onSent: () => void }) {
+function EmailForm({ base, quotation, onClose, onSent }: { base: string; quotation: { id: string; quote_number: string }; onClose: () => void; onSent: () => void }) {
   const [defaults, setDefaults] = useState<Defaults | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [to, setTo] = useState("");
@@ -49,7 +52,7 @@ function EmailForm({ quotation, onClose, onSent }: { quotation: { id: string; qu
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/billing/quotations/${quotation.id}/email`);
+        const res = await fetch(`${base}/${quotation.id}/email`);
         const json = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (!res.ok) {
@@ -67,12 +70,12 @@ function EmailForm({ quotation, onClose, onSent }: { quotation: { id: string; qu
     return () => {
       cancelled = true;
     };
-  }, [quotation.id]);
+  }, [quotation.id, base]);
 
   const send = async () => {
     setSending(true);
     try {
-      const res = await fetch(`/api/billing/quotations/${quotation.id}/email`, {
+      const res = await fetch(`${base}/${quotation.id}/email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ to, cc, subject, message }),
@@ -99,7 +102,7 @@ function EmailForm({ quotation, onClose, onSent }: { quotation: { id: string; qu
           <Mail className="h-4 w-4" /> Send {quotation.quote_number} via Email
         </DialogTitle>
         <DialogDescription>
-          {defaults?.from ? `From ${defaults.from}. ` : ""}The client gets a button to view, save as PDF and accept it.
+          {defaults?.from ? `From ${defaults.from}. ` : ""}The client gets a button to view and save it as PDF.
         </DialogDescription>
       </DialogHeader>
 

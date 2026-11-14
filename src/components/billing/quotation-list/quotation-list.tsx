@@ -238,10 +238,10 @@ export function QuotationList() {
     <div className="mx-auto max-w-7xl space-y-4">
       <nav className="flex gap-1 border-b text-sm" aria-label="Billing documents">
         <span className="-mb-px border-b-2 border-primary px-3 py-2 font-medium">Quotations</span>
-        <Link href="/quotations?tab=proforma" className="-mb-px border-b-2 border-transparent px-3 py-2 text-muted-foreground hover:text-foreground">
+        <Link href="/billing/invoices?type=proforma" className="-mb-px border-b-2 border-transparent px-3 py-2 text-muted-foreground hover:text-foreground">
           Proforma Invoices
         </Link>
-        <Link href="/quotations?tab=tax_invoice" className="-mb-px border-b-2 border-transparent px-3 py-2 text-muted-foreground hover:text-foreground">
+        <Link href="/billing/invoices?type=tax_invoice" className="-mb-px border-b-2 border-transparent px-3 py-2 text-muted-foreground hover:text-foreground">
           Tax Invoices
         </Link>
       </nav>

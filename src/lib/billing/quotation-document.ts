@@ -34,12 +34,20 @@ export interface DocParty {
   logo_url?: string | null;
 }
 
+export type DocumentKind = "quotation" | "proforma" | "tax_invoice";
+
 export interface QuotationDocument {
+  kind: DocumentKind;
   number: string;
   revision: number;
   status: string;
   date: string | null;
   validUntil: string | null;
+  /** Invoices: due date, payment so far and what is left. */
+  dueDate: string | null;
+  paid: number;
+  balance: number;
+  payment: { method: string | null; reference: string | null; paidAt: string | null } | null;
   subject: string | null;
   from: DocParty;
   to: DocParty;
@@ -81,7 +89,12 @@ export interface QuotationDocument {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/** Works for a quotation row or an invoice row (proforma / tax invoice). */
 export function buildQuotationDocument(quote: any, settings: any): QuotationDocument {
+  const kind: DocumentKind = quote.invoice_type === "tax_invoice" ? "tax_invoice" : quote.invoice_type === "proforma" ? "proforma" : "quotation";
+  const isInvoice = kind !== "quotation";
+  // Invoices carry their own bank snapshot; quotations use current settings.
+  const bankSrc = isInvoice && (quote.bank_account_no || quote.upi_id) ? quote : settings;
   const bf = (quote.billed_from ?? {}) as DocParty;
   const bt = (quote.billed_to ?? {}) as DocParty;
   const from: DocParty = {
@@ -147,14 +160,26 @@ export function buildQuotationDocument(quote: any, settings: any): QuotationDocu
     sgst = Math.round((n(quote.tax_amount) - cgst) * 100) / 100;
   }
   const grand = n(quote.total_amount);
-  const upiId = settings?.upi_id || null;
+  const paid = isInvoice ? n(quote.paid_amount) : 0;
+  const balance = isInvoice ? Math.max(0, Math.round((grand - paid) * 100) / 100) : grand;
+  const upiId = bankSrc?.upi_id || null;
+  // QR asks for what is still payable.
+  const qrAmount = isInvoice ? balance : grand;
 
   return {
-    number: quote.quote_number,
+    kind,
+    number: isInvoice ? quote.invoice_number : quote.quote_number,
     revision: n(quote.revision),
     status: quote.status,
     date: quote.issue_date ?? null,
-    validUntil: quote.valid_until ?? null,
+    validUntil: isInvoice ? null : quote.valid_until ?? null,
+    dueDate: isInvoice ? quote.due_date ?? null : null,
+    paid,
+    balance,
+    payment:
+      isInvoice && paid > 0
+        ? { method: quote.payment_method ?? null, reference: quote.payment_reference ?? null, paidAt: quote.paid_at ?? null }
+        : null,
     subject: quote.title || null,
     from,
     to,
@@ -181,19 +206,22 @@ export function buildQuotationDocument(quote: any, settings: any): QuotationDocu
     },
     taxed,
     bank: {
-      name: settings?.bank_name || null,
-      accountNo: settings?.bank_account_no || null,
-      ifsc: settings?.bank_ifsc || null,
-      holder: settings?.bank_beneficiary_name || null,
+      name: bankSrc?.bank_name || null,
+      accountNo: bankSrc?.bank_account_no || null,
+      ifsc: bankSrc?.bank_ifsc || null,
+      holder: bankSrc?.bank_beneficiary_name || null,
       upiId,
     },
+    // Nothing left to pay -> no QR.
     upiQrUrl:
-      settings?.upi_qr_url ||
-      (upiId
-        ? `https://quickchart.io/qr?size=150&text=${encodeURIComponent(
-            `upi://pay?pa=${upiId}&pn=${from.name}&am=${grand.toFixed(2)}&cu=INR&tn=${quote.quote_number}`,
-          )}`
-        : null),
+      qrAmount <= 0
+        ? null
+        : bankSrc?.upi_qr_url ||
+          (upiId
+            ? `https://quickchart.io/qr?size=150&text=${encodeURIComponent(
+                `upi://pay?pa=${upiId}&pn=${from.name}&am=${qrAmount.toFixed(2)}&cu=INR&tn=${isInvoice ? quote.invoice_number : quote.quote_number}`,
+              )}`
+            : null),
     notes: quote.notes || null,
     terms: quote.terms || settings?.default_terms || null,
     stampUrl: quote.stamp_url || settings?.stamp_url || null,
@@ -273,6 +301,10 @@ export function renderQuotationDocumentHtml(doc: QuotationDocument, opts: Render
     t.docDiscount ? `<tr><td>Discount</td><td class="r">-${money(t.docDiscount)}</td></tr>` : "",
     t.roundOff ? `<tr><td>Round Off</td><td class="r">${t.roundOff > 0 ? "+" : ""}${money(t.roundOff)}</td></tr>` : "",
     `<tr class="grand"><td>Grand Total</td><td class="r">₹ ${money(t.grand)}</td></tr>`,
+    doc.kind !== "quotation" && doc.paid > 0 ? `<tr><td>Paid</td><td class="r">${money(doc.paid)}</td></tr>` : "",
+    doc.kind !== "quotation" && doc.status !== "cancelled"
+      ? `<tr><td class="strong">Remaining Amount</td><td class="r strong">₹ ${money(doc.balance)}</td></tr>`
+      : "",
   ].join("");
 
   const bank = doc.bank;
@@ -282,13 +314,17 @@ export function renderQuotationDocumentHtml(doc: QuotationDocument, opts: Render
   const stamp = safeUrl(doc.stampUrl);
   const signature = safeUrl(doc.signatureUrl);
   const watermark = doc.status === "cancelled" ? "CANCELLED" : doc.status === "draft" ? "DRAFT" : null;
+  const title = doc.kind === "tax_invoice" ? "TAX INVOICE" : doc.kind === "proforma" ? "PROFORMA INVOICE" : "QUOTATION";
+  const noun = doc.kind === "quotation" ? "Quotation" : "Invoice";
+  const docName = doc.kind === "tax_invoice" ? "Tax Invoice" : doc.kind === "proforma" ? "Proforma Invoice" : "Quotation";
+  const paidStamp = doc.kind !== "quotation" && doc.status === "paid";
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Quotation ${e(doc.number)} - ${e(doc.from.name)}</title>
+<title>${e(docName)} ${e(doc.number)} - ${e(doc.from.name)}</title>
 <style>
   @page { size: A4 portrait; margin: 12mm; }
   * { box-sizing: border-box; }
@@ -310,6 +346,7 @@ export function renderQuotationDocumentHtml(doc: QuotationDocument, opts: Render
   .words { margin-top: 10px; padding: 8px 10px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 12px; }
   .section { margin-top: 14px; } .section h3 { font-size: 11px; letter-spacing: .08em; color: #6b7280; margin: 0 0 4px; }
   .sign { margin-top: 26px; text-align: right; } .sign img { max-height: 70px; max-width: 160px; }
+  .paid { position: absolute; top: 18px; right: 230px; border: 3px solid #16a34a; color: #16a34a; font-size: 26px; font-weight: 800; letter-spacing: .12em; padding: 4px 14px; border-radius: 6px; transform: rotate(-8deg); opacity: .85; }
   .watermark { position: absolute; top: 280px; left: 0; right: 0; text-align: center; font-size: 96px; font-weight: 800; color: rgba(220, 38, 38, .08); transform: rotate(-20deg); pointer-events: none; }
   .bar { max-width: 820px; margin: 0 auto 16px; display: flex; justify-content: space-between; align-items: center; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; padding: 10px 14px; }
   .bar button { background: #111827; color: #fff; border: 0; border-radius: 5px; padding: 7px 16px; font-weight: 600; cursor: pointer; }
@@ -318,16 +355,18 @@ export function renderQuotationDocumentHtml(doc: QuotationDocument, opts: Render
 </style>
 </head>
 <body>
-${opts.printBar ? `<div class="bar"><strong>Quotation ${e(doc.number)}</strong><button onclick="window.print()">Print / Save PDF</button></div>` : ""}
+${opts.printBar ? `<div class="bar"><strong>${e(docName)} ${e(doc.number)}</strong><button onclick="window.print()">Print / Save PDF</button></div>` : ""}
 <div class="page">
   ${watermark ? `<div class="watermark">${watermark}</div>` : ""}
+  ${paidStamp ? `<div class="paid">PAID</div>` : ""}
   <table class="head"><tr>
     <td style="vertical-align:top">
-      <h1>QUOTATION</h1>
+      <h1>${title}</h1>
       <table class="meta" style="width:auto">
-        <tr><td>Quotation No</td><td class="strong">${e(doc.number)}${doc.revision > 0 ? ` <span style="color:#b45309">(Rev ${doc.revision})</span>` : ""}</td></tr>
-        ${doc.date ? `<tr><td>Quotation Date</td><td>${dmy(doc.date)}</td></tr>` : ""}
+        <tr><td>${noun} No</td><td class="strong">${e(doc.number)}${doc.revision > 0 ? ` <span style="color:#b45309">(Rev ${doc.revision})</span>` : ""}</td></tr>
+        ${doc.date ? `<tr><td>${noun} Date</td><td>${dmy(doc.date)}</td></tr>` : ""}
         ${doc.validUntil ? `<tr><td>Valid Until</td><td>${dmy(doc.validUntil)}</td></tr>` : ""}
+        ${doc.dueDate ? `<tr><td>Due Date</td><td>${dmy(doc.dueDate)}</td></tr>` : ""}
         ${doc.placeOfSupply ? `<tr><td>Place of Supply</td><td>${e(doc.placeOfSupply)}</td></tr>` : ""}
       </table>
     </td>
@@ -392,9 +431,23 @@ ${opts.printBar ? `<div class="bar"><strong>Quotation ${e(doc.number)}</strong><
   </tr></table>
 
   <div class="words"><span class="muted">Amount in words:</span> <span class="strong">${e(t.words)}</span></div>
+  ${
+    doc.payment
+      ? `<div class="small" style="margin-top:6px"><span class="muted">Payment received:</span> ₹ ${money(doc.paid)}${
+          doc.payment.method ? ` via ${e(doc.payment.method.replace("_", " ").toUpperCase())}` : ""
+        }${doc.payment.reference ? ` · Ref ${e(doc.payment.reference)}` : ""}${doc.payment.paidAt ? ` · ${dmy(doc.payment.paidAt)}` : ""}</div>`
+      : ""
+  }
 
   ${doc.notes ? `<div class="section"><h3>NOTES</h3><div>${nl2br(doc.notes)}</div></div>` : ""}
   ${doc.terms ? `<div class="section"><h3>TERMS &amp; CONDITIONS</h3><div class="small">${nl2br(doc.terms)}</div></div>` : ""}
+  ${
+    doc.kind === "tax_invoice"
+      ? `<div class="section small"><span class="strong">Declaration:</span> Certified that the particulars given above are true and correct and the amount indicated represents the price actually charged.</div>`
+      : doc.kind === "proforma"
+        ? `<div class="section small muted">This is a proforma invoice for advance payment. The tax invoice is issued once payment is received.</div>`
+        : ""
+  }
 
   <div class="sign">
     <div class="strong">For ${e(doc.from.name)}</div>

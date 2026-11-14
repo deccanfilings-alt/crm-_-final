@@ -24,7 +24,8 @@ const NAVIGATION_ITEMS = [
   { title: "Broadcasts", href: "/broadcasts", icon: <Compass className="mr-2 h-4 w-4" /> },
   { title: "Quotations", href: "/billing/quotations", icon: <Compass className="mr-2 h-4 w-4" /> },
   { title: "New Quotation", href: "/billing/quotations/new", icon: <Compass className="mr-2 h-4 w-4" /> },
-  { title: "Invoices", href: "/quotations", icon: <Compass className="mr-2 h-4 w-4" /> },
+  { title: "Proforma Invoices", href: "/billing/invoices?type=proforma", icon: <Compass className="mr-2 h-4 w-4" /> },
+  { title: "Tax Invoices", href: "/billing/invoices?type=tax_invoice", icon: <Compass className="mr-2 h-4 w-4" /> },
   { title: "Automations", href: "/automations", icon: <Compass className="mr-2 h-4 w-4" /> },
   { title: "Settings", href: "/settings", icon: <Compass className="mr-2 h-4 w-4" /> },
 ];

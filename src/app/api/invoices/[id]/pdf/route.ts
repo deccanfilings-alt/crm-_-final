@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { renderInvoiceHtml } from '@/lib/invoices/invoice-template';
+import { buildQuotationDocument, renderQuotationDocumentHtml } from '@/lib/billing/quotation-document';
 import { getQuotationSettings } from '@/lib/quotations/settings';
 
 export async function GET(
@@ -28,9 +28,10 @@ export async function GET(
 
     const { data: invoice, error } = await supabase
       .from('invoices')
-      .select('*, items:invoice_items(*)')
+      .select('*, items:invoice_items(*), ledger_lines:invoice_ledger_lines(*)')
       .eq('id', id)
       .eq('account_id', profile.account_id)
+      .is('deleted_at', null)
       .single();
 
     if (error || !invoice) {
@@ -42,7 +43,7 @@ export async function GET(
     }
 
     const settings = await getQuotationSettings(supabase, profile.account_id);
-    const html = renderInvoiceHtml(invoice, settings);
+    const html = renderQuotationDocumentHtml(buildQuotationDocument(invoice, settings), { printBar: true });
 
     return new Response(html, {
       status: 200,

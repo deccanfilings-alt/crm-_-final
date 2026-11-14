@@ -50,3 +50,26 @@ describe("quotation email", () => {
     expect(defaultQuotationSubject("DF-QT-1027", "Deccan Filings")).toBe("Quotation DF-QT-1027 from Deccan Filings");
   });
 });
+
+describe("invoice email", () => {
+  it("shows the invoice label, amount due and due date; no accept wording", () => {
+    const { html, text } = buildQuotationEmail({
+      docLabel: "Proforma Invoice",
+      quoteNumber: "DF-PI-1007",
+      companyName: "Deccan Filings",
+      clientName: "Ali",
+      total: 2360,
+      validUntil: null,
+      dueDate: "2026-11-20",
+      balance: 1360,
+      link: "https://x/invoice/abc",
+      message: "Hi",
+    });
+    expect(text).toContain("Proforma Invoice: DF-PI-1007");
+    expect(text).toContain("Amount due: ₹1,360.00");
+    expect(text).toContain("Due date: 20/11/2026");
+    expect(text).not.toMatch(/accept/i);
+    expect(text).not.toMatch(/\n\n\n/);
+    expect(html).toContain("View proforma invoice");
+  });
+});
