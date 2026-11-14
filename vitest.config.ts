@@ -1,8 +1,12 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    tsconfigPaths: true,
+    // Explicit "@/" alias: vi.mock("@/...") must resolve to the same
+    // module id as the app's imports (tsconfigPaths stopped matching
+    // mocked ids on Vite 8.3).
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   test: {
     environment: "node",
