@@ -73,6 +73,11 @@ const nextConfig: NextConfig = {
     ],
   },
   compress: false, // Fix for Hostinger/LiteSpeed corrupting Next.js chunked streaming responses
+  // No page uses next/image. Turning the optimizer off removes the
+  // /_next/image endpoint, closing the Image Optimization advisories
+  // (GHSA-2xp9-vwfh-vxw4, GHSA-2464-fhr4-w9xw, GHSA-cjq9-62q9-8jv4)
+  // while Hostinger's build host can't run Next >= 16.3 (glibc 2.30).
+  images: { unoptimized: true },
   allowedDevOrigins: ["*.ngrok-free.dev"],
   /**
    * Cache-Control policy.
