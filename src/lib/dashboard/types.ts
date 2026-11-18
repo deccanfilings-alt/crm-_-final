@@ -1,3 +1,5 @@
+import type { AgentStatus } from '@/types'
+
 // Shared result shapes the dashboard components consume. Centralised
 // here so each component stays thin and the page-level loader wires
 // them up without type gymnastics.
@@ -70,7 +72,7 @@ export interface AgentProductivityRow {
   user_id: string
   full_name: string
   avatar_url?: string
-  agent_status: 'online' | 'away' | 'offline'
+  agent_status: AgentStatus
   active_conversations: number
   replies_sent: number
   avg_response_minutes: number | null

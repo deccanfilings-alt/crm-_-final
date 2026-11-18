@@ -70,9 +70,11 @@ export function TeamProductivity({ rows }: TeamProductivityProps) {
                       className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-background ${
                         displayStatus === "online"
                           ? "bg-emerald-500"
-                          : displayStatus === "away"
-                            ? "bg-amber-500"
-                            : "bg-neutral-400"
+                          : displayStatus === "busy"
+                            ? "bg-rose-500"
+                            : displayStatus === "away"
+                              ? "bg-amber-500"
+                              : "bg-neutral-400"
                       }`}
                     />
                   </div>
@@ -83,18 +85,22 @@ export function TeamProductivity({ rows }: TeamProductivityProps) {
                     className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-semibold shadow-2xs ${
                       displayStatus === "online"
                         ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                        : displayStatus === "away"
-                          ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                          : "border-muted-foreground/30 bg-muted text-muted-foreground"
+                        : displayStatus === "busy"
+                          ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                          : displayStatus === "away"
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            : "border-muted-foreground/30 bg-muted text-muted-foreground"
                     }`}
                   >
                     <span
                       className={`h-1.5 w-1.5 rounded-full ${
                         displayStatus === "online"
                           ? "bg-emerald-500 animate-pulse"
-                          : displayStatus === "away"
-                            ? "bg-amber-500"
-                            : "bg-muted-foreground"
+                          : displayStatus === "busy"
+                            ? "bg-rose-500"
+                            : displayStatus === "away"
+                              ? "bg-amber-500"
+                              : "bg-muted-foreground"
                       }`}
                     />
                     <span className="capitalize text-[11px]">{displayStatus}</span>

@@ -872,10 +872,10 @@ export default function TeamChatPage() {
                       <span
                         className={cn(
                           "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background",
-                          isPartnerOnline
-                            ? "bg-emerald-500"
-                            : isPartnerBusy
-                              ? "bg-amber-500"
+                          isPartnerBusy
+                            ? "bg-rose-500"
+                            : isPartnerOnline
+                              ? "bg-emerald-500"
                               : "bg-muted-foreground/40"
                         )}
                       />
@@ -903,10 +903,10 @@ export default function TeamChatPage() {
                         )}
                       </div>
                       <p className="text-[11px] text-muted-foreground">
-                        {isPartnerOnline
-                          ? "Active now"
-                          : isPartnerBusy
-                            ? "Busy"
+                        {isPartnerBusy
+                          ? "Busy"
+                          : isPartnerOnline
+                            ? "Active now"
                             : "Offline"}
                         {partner?.email ? ` • ${partner.email}` : ""}
                       </p>

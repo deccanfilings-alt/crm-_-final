@@ -1,3 +1,4 @@
+import type { AgentStatus } from '@/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   daysAgoStart,
@@ -509,7 +510,7 @@ export async function loadTeamProductivity(
       user_id: p.user_id,
       full_name: p.full_name,
       avatar_url: p.avatar_url ?? undefined,
-      agent_status: p.agent_status as 'online' | 'away' | 'offline',
+      agent_status: p.agent_status as AgentStatus,
       active_conversations: activeLoadMap.get(p.user_id) ?? 0,
       replies_sent: repliesMap.get(p.user_id) ?? 0,
       avg_response_minutes: avgResponse,

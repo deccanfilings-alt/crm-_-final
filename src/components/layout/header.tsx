@@ -12,6 +12,7 @@ import {
   User,
   Check,
   CircleDot,
+  CircleMinus,
   Moon,
   AlertTriangle,
   X,
@@ -34,6 +35,58 @@ import { ModeToggle } from "@/components/layout/mode-toggle";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { TimeTrackerHeaderPill } from "@/components/wam/time-tracker";
 import { cn } from "@/lib/utils";
+import type { AgentStatus } from "@/types";
+
+// The availability options, in menu order. Both status pickers (the
+// pill and the account menu) render from this list.
+const STATUS_OPTIONS: Array<{
+  value: AgentStatus;
+  label: string;
+  hint: string;
+  icon: React.ReactNode;
+  checkClass: string;
+}> = [
+  {
+    value: "online",
+    label: "Online",
+    hint: "Available for new chats",
+    icon: <CircleDot className="size-4 text-emerald-500" />,
+    checkClass: "text-emerald-500",
+  },
+  {
+    value: "busy",
+    label: "Busy",
+    hint: "No new chats or @here pings",
+    icon: <CircleMinus className="size-4 text-rose-500" />,
+    checkClass: "text-rose-500",
+  },
+  {
+    value: "away",
+    label: "Away",
+    hint: "Stepped away",
+    icon: <Moon className="size-4 text-amber-500" />,
+    checkClass: "text-amber-500",
+  },
+  {
+    value: "offline",
+    label: "Offline",
+    hint: "Not working",
+    icon: (
+      <span className="flex size-4 items-center justify-center">
+        <span className="size-3.5 rounded-full border-2 border-muted-foreground" />
+      </span>
+    ),
+    checkClass: "",
+  },
+];
+
+// Small coloured dot for the current status.
+const STATUS_DOT: Record<AgentStatus, string> = {
+  online: "bg-emerald-500",
+  busy: "bg-rose-500",
+  away: "bg-amber-500",
+  offline: "bg-neutral-400",
+};
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -72,7 +125,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
 
   const currentStatus = profile?.agent_status ?? "online";
 
-  const handleStatusChange = async (newStatus: "online" | "away" | "offline") => {
+  const handleStatusChange = async (newStatus: AgentStatus) => {
     if (newStatus !== "offline") {
       setBannerDismissed(false);
     }
@@ -136,6 +189,8 @@ export function Header({ onOpenSidebar }: HeaderProps) {
                 "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer",
                 currentStatus === "online" &&
                   "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20",
+                currentStatus === "busy" &&
+                  "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20",
                 currentStatus === "away" &&
                   "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20",
                 currentStatus === "offline" &&
@@ -146,48 +201,35 @@ export function Header({ onOpenSidebar }: HeaderProps) {
               <span
                 className={cn(
                   "size-2 rounded-full",
-                  currentStatus === "online" && "bg-emerald-500 animate-pulse",
-                  currentStatus === "away" && "bg-amber-500",
-                  currentStatus === "offline" && "bg-neutral-400"
+                  STATUS_DOT[currentStatus],
+                  currentStatus === "online" && "animate-pulse"
                 )}
               />
               <span className="capitalize">{currentStatus}</span>
               <ChevronDown className="size-3 opacity-60 ml-0.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={6} className="w-44 bg-popover text-popover-foreground">
+            <DropdownMenuContent align="end" sideOffset={6} className="w-56 bg-popover text-popover-foreground">
               <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Set Availability
               </div>
-              <DropdownMenuItem
-                onClick={() => handleStatusChange("online")}
-                className="flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <CircleDot className="size-4 text-emerald-500" />
-                  <span>Online</span>
-                </div>
-                {currentStatus === "online" && <Check className="size-4 text-emerald-500" />}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleStatusChange("away")}
-                className="flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <Moon className="size-4 text-amber-500" />
-                  <span>Away</span>
-                </div>
-                {currentStatus === "away" && <Check className="size-4 text-amber-500" />}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleStatusChange("offline")}
-                className="flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="size-3.5 rounded-full border-2 border-muted-foreground" />
-                  <span>Offline</span>
-                </div>
-                {currentStatus === "offline" && <Check className="size-4" />}
-              </DropdownMenuItem>
+              {STATUS_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => handleStatusChange(opt.value)}
+                  className="flex items-center justify-between gap-2 cursor-pointer"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    {opt.icon}
+                    <div className="min-w-0">
+                      <div>{opt.label}</div>
+                      <div className="truncate text-[11px] text-muted-foreground">{opt.hint}</div>
+                    </div>
+                  </div>
+                  {currentStatus === opt.value && (
+                    <Check className={cn("size-4 shrink-0", opt.checkClass)} />
+                  )}
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -215,9 +257,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
                 <span
                   className={cn(
                     "absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-background",
-                    currentStatus === "online" && "bg-emerald-500",
-                    currentStatus === "away" && "bg-amber-500",
-                    currentStatus === "offline" && "bg-neutral-400"
+                    STATUS_DOT[currentStatus]
                   )}
                 />
               </div>
@@ -242,36 +282,21 @@ export function Header({ onOpenSidebar }: HeaderProps) {
               <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Status
               </div>
-              <DropdownMenuItem
-                onClick={() => handleStatusChange("online")}
-                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <CircleDot className="size-4 text-emerald-500" />
-                  Online
-                </div>
-                {currentStatus === "online" && <Check className="size-4 text-emerald-500" />}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleStatusChange("away")}
-                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <Moon className="size-4 text-amber-500" />
-                  Away
-                </div>
-                {currentStatus === "away" && <Check className="size-4 text-amber-500" />}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleStatusChange("offline")}
-                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground flex items-center justify-between cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="size-3.5 rounded-full border-2 border-muted-foreground" />
-                  Offline
-                </div>
-                {currentStatus === "offline" && <Check className="size-4" />}
-              </DropdownMenuItem>
+              {STATUS_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => handleStatusChange(opt.value)}
+                  className="text-popover-foreground focus:bg-accent focus:text-accent-foreground flex items-center justify-between cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    {opt.icon}
+                    {opt.label}
+                  </div>
+                  {currentStatus === opt.value && (
+                    <Check className={cn("size-4", opt.checkClass)} />
+                  )}
+                </DropdownMenuItem>
+              ))}
               <DropdownMenuSeparator className="bg-border" />
               <DropdownMenuItem
                 render={

@@ -323,13 +323,13 @@ export function TeamChannelList({
                         <span
                           className={cn(
                             "absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-card ring-1 ring-background",
-                            isOnline
-                              ? "bg-emerald-500"
-                              : isBusy
-                                ? "bg-amber-500"
+                            isBusy
+                              ? "bg-rose-500"
+                              : isOnline
+                                ? "bg-emerald-500"
                                 : "bg-muted-foreground/40"
                           )}
-                          title={isOnline ? "Online" : isBusy ? "Busy" : "Offline"}
+                          title={isBusy ? "Busy" : isOnline ? "Online" : "Offline"}
                         />
                       </div>
                       <span className="truncate">{partnerName}</span>
@@ -502,10 +502,10 @@ export function TeamChannelList({
                           <span
                             className={cn(
                               "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background",
-                              isOnline
-                                ? "bg-emerald-500"
-                                : isBusy
-                                  ? "bg-amber-500"
+                              isBusy
+                                ? "bg-rose-500"
+                                : isOnline
+                                  ? "bg-emerald-500"
                                   : "bg-muted-foreground/40"
                             )}
                           />

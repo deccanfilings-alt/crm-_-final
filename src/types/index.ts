@@ -1,5 +1,15 @@
 import type { AccountRole } from "@/lib/auth/roles";
 
+/**
+ * A team member's availability (profiles.agent_status).
+ * - online:  available; gets auto-assigned chats and @here pings
+ * - busy:    working but not to be disturbed; no auto-assigned chats
+ *            and no @here pings (both only target `online`)
+ * - away:    stepped away
+ * - offline: not working
+ */
+export type AgentStatus = 'online' | 'busy' | 'away' | 'offline';
+
 export interface Profile {
   id: string;
   user_id: string;
@@ -35,7 +45,7 @@ export interface Profile {
    * `@/lib/auth/roles` rather than comparing this string directly.
    */
   account_role?: AccountRole;
-  agent_status: 'online' | 'away' | 'offline';
+  agent_status: AgentStatus;
   last_routed_at?: string;
   created_at: string;
 }

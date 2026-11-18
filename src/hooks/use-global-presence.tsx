@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import type { AgentStatus } from "@/types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 interface ViewingAgent {
@@ -13,11 +14,11 @@ interface ViewingAgent {
 
 interface GlobalPresenceContextType {
   activeUserIds: Set<string>;
-  userStatuses: Record<string, "online" | "away" | "offline">;
+  userStatuses: Record<string, AgentStatus>;
   setViewingConversation: (conversationId: string | null) => void;
   getViewingAgents: (conversationId: string) => ViewingAgent[];
   refreshPresence: () => Promise<void>;
-  updateAgentStatus: (status: "online" | "away" | "offline") => Promise<void>;
+  updateAgentStatus: (status: AgentStatus) => Promise<void>;
 }
 
 const GlobalPresenceContext = createContext<GlobalPresenceContextType>({
@@ -32,13 +33,13 @@ const GlobalPresenceContext = createContext<GlobalPresenceContextType>({
 export function GlobalPresenceProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, accountId, refreshProfile } = useAuth();
   const [activeUserIds, setActiveUserIds] = useState<Set<string>>(new Set());
-  const [userStatuses, setUserStatuses] = useState<Record<string, "online" | "away" | "offline">>({});
+  const [userStatuses, setUserStatuses] = useState<Record<string, AgentStatus>>({});
   const [presenceMap, setPresenceMap] = useState<Record<string, ViewingAgent>>({});
   const channelRef = useRef<RealtimeChannel | null>(null);
   const currentConvRef = useRef<string | null>(null);
 
   const trackPresence = useCallback(
-    async (conversationId: string | null, customStatus?: "online" | "away" | "offline") => {
+    async (conversationId: string | null, customStatus?: AgentStatus) => {
       if (!channelRef.current || !profile) return;
       currentConvRef.current = conversationId;
 
@@ -69,7 +70,7 @@ export function GlobalPresenceProvider({ children }: { children: React.ReactNode
   }, [trackPresence]);
 
   const updateAgentStatus = useCallback(
-    async (newStatus: "online" | "away" | "offline") => {
+    async (newStatus: AgentStatus) => {
       if (!profile) return;
       const authUserId = user?.id || (profile as any).user_id || profile.id;
 
@@ -126,7 +127,7 @@ export function GlobalPresenceProvider({ children }: { children: React.ReactNode
         const state = channel.presenceState();
         const userIds = new Set<string>();
         const map: Record<string, ViewingAgent> = {};
-        const statuses: Record<string, "online" | "away" | "offline"> = {};
+        const statuses: Record<string, AgentStatus> = {};
 
         for (const key in state) {
           const presences = state[key] as any[];
@@ -137,7 +138,7 @@ export function GlobalPresenceProvider({ children }: { children: React.ReactNode
             if (latest.profileId) userIds.add(latest.profileId);
             if (key) userIds.add(key);
 
-            const st = (latest.agentStatus as "online" | "away" | "offline") || "online";
+            const st = (latest.agentStatus as AgentStatus) || "online";
             statuses[primaryId] = st;
             if (latest.profileId) statuses[latest.profileId] = st;
             if (key) statuses[key] = st;
