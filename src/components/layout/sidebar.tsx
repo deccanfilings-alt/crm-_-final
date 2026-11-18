@@ -12,7 +12,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import {
   Bot,
   BrainCircuit,
-  Building2,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -35,6 +34,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
+import { BrandMark } from "@/components/brand/brand-mark";
 import {
   Avatar,
   AvatarFallback,
@@ -313,9 +313,11 @@ export function Sidebar({ open = false, onClose, isCollapsed = false, onToggleCo
           )}
         >
           <Link href="/dashboard" className="flex items-center gap-2.5 group">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-xs shadow-primary/30 transition-transform duration-200 group-hover:scale-105">
-              <Building2 className="h-4 w-4" />
-            </div>
+            <BrandMark
+              size={32}
+              priority
+              className="shadow-xs transition-transform duration-200 group-hover:scale-105"
+            />
             <span
               className={cn(
                 "text-sm font-bold tracking-tight text-foreground transition-opacity",
