@@ -2,7 +2,8 @@ import { supabaseAdmin } from "@/lib/flows/admin-client";
 // ============================================================
 // /api/account/members/[userId]
 //
-//   PATCH  — change a member's role.   Admin+.
+//   PATCH  — change a member's role or team (admin+), or their
+//            display name (owner only).
 //   DELETE — remove a member.          Admin+.
 //
 // Both delegate to SECURITY DEFINER RPCs from migration 018:
@@ -20,6 +21,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { isAccountRole } from "@/lib/auth/roles";
+import { validateDisplayName } from "@/lib/auth/display-name";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -59,16 +61,58 @@ export async function PATCH(
     const { userId } = await params;
 
     const body = (await request.json().catch(() => null)) as
-      | { role?: unknown; team?: unknown }
+      | { role?: unknown; team?: unknown; full_name?: unknown }
       | null;
     const role = body?.role;
     const team = body?.team;
+    const fullName = body?.full_name;
 
-    if (role === undefined && team === undefined) {
+    if (role === undefined && team === undefined && fullName === undefined) {
       return NextResponse.json(
-        { error: "Either 'role' or 'team' must be provided" },
+        { error: "Provide 'role', 'team' or 'full_name'" },
         { status: 400 },
       );
+    }
+
+    // Display name: owners (co-owners included) only. Validated before
+    // any other field is written so a bad name never leaves a partial
+    // update behind.
+    let nameValue: string | undefined;
+    if (fullName !== undefined) {
+      if (ctx.role !== "owner") {
+        return NextResponse.json(
+          { error: "Only an owner can change a member's name" },
+          { status: 403 },
+        );
+      }
+      const result = validateDisplayName(fullName);
+      if ("error" in result) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      nameValue = result.name;
+    }
+
+    if (nameValue !== undefined) {
+      const { data: updated, error: nameErr } = await supabaseAdmin()
+        .from("profiles")
+        .update({ full_name: nameValue })
+        .eq("user_id", userId)
+        .eq("account_id", ctx.accountId)
+        .select("user_id");
+
+      if (nameErr) {
+        console.error("[members route] name update failed:", nameErr);
+        return NextResponse.json(
+          { error: "Failed to update name" },
+          { status: 500 },
+        );
+      }
+      if (!updated || updated.length === 0) {
+        return NextResponse.json(
+          { error: "Member not found in this account" },
+          { status: 404 },
+        );
+      }
     }
 
     if (team !== undefined) {

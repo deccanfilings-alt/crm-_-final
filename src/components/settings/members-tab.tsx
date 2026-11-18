@@ -31,6 +31,7 @@ import {
   Plus,
   Crown,
   LogOut,
+  Pencil,
   Trash2,
   UsersRound,
 } from 'lucide-react';
@@ -54,9 +55,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import type { AccountRole } from '@/lib/auth/roles';
+import {
+  MAX_DISPLAY_NAME_LENGTH,
+  validateDisplayName,
+} from '@/lib/auth/display-name';
 import { InviteMemberDialog } from './invite-member-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 import { ROLE_META } from './role-meta';
@@ -112,8 +119,56 @@ function fmtExpiresIn(iso: string): string {
 }
 
 export function MembersTab() {
-  const { user, canManageMembers, accountRole } = useAuth();
+  const { user, canManageMembers, accountRole, refreshProfile } = useAuth();
   const iAmOwner = accountRole === 'owner';
+
+  // Owners can rename any member, themselves included.
+  const [renamingMember, setRenamingMember] = useState<Member | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const nameCheck = validateDisplayName(nameDraft);
+  const nameError =
+    renamingMember && 'error' in nameCheck ? nameCheck.error : null;
+  const nameUnchanged =
+    'name' in nameCheck && nameCheck.name === (renamingMember?.full_name ?? '');
+
+  function openRename(member: Member) {
+    setRenamingMember(member);
+    setNameDraft(member.full_name || '');
+  }
+
+  async function handleRename() {
+    if (!renamingMember || !('name' in nameCheck) || nameUnchanged) return;
+    const target = renamingMember;
+    const nextName = nameCheck.name;
+    setSavingName(true);
+    try {
+      const res = await fetch(`/api/account/members/${target.user_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ full_name: nextName }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Failed to update name');
+        return;
+      }
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === target.user_id ? { ...m, full_name: nextName } : m,
+        ),
+      );
+      toast.success(`Name changed to ${nextName}`);
+      setRenamingMember(null);
+      // Renaming yourself: refresh the signed-in profile so the
+      // sidebar and header show the new name without a reload.
+      if (target.user_id === user?.id) void refreshProfile();
+    } catch {
+      toast.error('Could not reach the server');
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   // Co-owners (migration 070): owners can promote a member to co-owner;
   // an owner can step down only while another owner remains.
@@ -402,6 +457,18 @@ export function MembersTab() {
                         <span className="truncate text-sm font-medium text-foreground">
                           {member.full_name || 'Unnamed'}
                         </span>
+                        {iAmOwner && (
+                          <button
+                            type="button"
+                            onClick={() => openRename(member)}
+                            disabled={isBusy}
+                            title="Edit name"
+                            aria-label={`Edit name for ${member.full_name || member.email || 'member'}`}
+                            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                        )}
                         {isSelf && (
                           <Badge className="bg-muted text-muted-foreground border-border text-[10px] uppercase tracking-wide">
                             You
@@ -681,6 +748,86 @@ export function MembersTab() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={renamingMember !== null}
+        onOpenChange={(open) => {
+          if (!open && !savingName) setRenamingMember(null);
+        }}
+      >
+        <DialogContent className="bg-popover border-border sm:max-w-sm">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleRename();
+            }}
+            className="space-y-4"
+          >
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+                <Pencil className="size-4 text-primary" />
+                Edit name
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground">
+                This is how{' '}
+                {renamingMember?.user_id === user?.id ? 'you appear' : 'they appear'}{' '}
+                across the CRM: inbox, tasks, team chat and reports.
+                {renamingMember?.email ? (
+                  <>
+                    {' '}Login email stays{' '}
+                    <span className="font-medium text-foreground">
+                      {renamingMember.email}
+                    </span>
+                    .
+                  </>
+                ) : null}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="member-display-name">Display name</Label>
+              <Input
+                id="member-display-name"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                maxLength={MAX_DISPLAY_NAME_LENGTH}
+                autoFocus
+                autoComplete="off"
+                placeholder="e.g. Priya Sharma"
+                aria-invalid={nameError ? true : undefined}
+              />
+              {nameError ? (
+                <p className="text-xs text-red-500">{nameError}</p>
+              ) : null}
+            </div>
+
+            <DialogFooter className="bg-popover border-border">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRenamingMember(null)}
+                disabled={savingName}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingName || !!nameError || nameUnchanged}
+              >
+                {savingName ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save name'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
