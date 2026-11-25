@@ -25,10 +25,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GitBranch, Plus, ChevronDown, Settings, Loader2 } from "lucide-react";
+import {
+  GitBranch,
+  Plus,
+  ChevronDown,
+  Settings,
+  Loader2,
+  Pin,
+  PinOff,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
+import { usePipelinePins } from "@/hooks/use-pipeline-pins";
+import { pickDefaultPipeline, splitPinnedPipelines } from "@/lib/pipelines/pins";
+import { cn } from "@/lib/utils";
 import { GatedButton } from "@/components/ui/gated-button";
 
 // Pipeline creation is admin-class (settings-tier write under
@@ -87,6 +98,15 @@ function PipelinesPageInner() {
 
   // Guard against double-seeding (React StrictMode double-effect in dev).
   const seedAttempted = useRef(false);
+
+  // Personal pins. Until the user picks a pipeline themselves, the page
+  // opens on their first pinned pipeline once pins have loaded.
+  const pins = usePipelinePins();
+  const autoPick = useRef(true);
+  const selectPipeline = useCallback((id: string) => {
+    autoPick.current = false;
+    setSelectedPipelineId(id);
+  }, []);
 
   const loadPipelines = useCallback(async () => {
     const { data, error } = await supabase
@@ -186,6 +206,18 @@ function PipelinesPageInner() {
       cancelled = true;
     };
   }, [loadPipelines, seedDefaultPipeline, queryPipelineId]);
+
+  // Once pins arrive, open the first pinned pipeline, unless the URL
+  // names one or the user has already chosen.
+  useEffect(() => {
+    if (!pins.loaded || !autoPick.current || pipelines.length === 0) return;
+    autoPick.current = false;
+    if (queryPipelineId) return;
+    const next = pickDefaultPipeline(pipelines, pins.pinnedIds);
+    // Runs once (guarded by autoPick) after pins load asynchronously.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (next) setSelectedPipelineId(next);
+  }, [pins.loaded, pins.pinnedIds, pipelines, queryPipelineId]);
 
   // Synchronize when queryPipelineId in the URL changes
   useEffect(() => {
@@ -339,13 +371,57 @@ function PipelinesPageInner() {
 
     setNewPipelineName("");
     setNewPipelineOpen(false);
-    setSelectedPipelineId(pipeline.id);
+    selectPipeline(pipeline.id);
     await refreshPipelines();
     setCreating(false);
     toast.success("Pipeline created");
   }
 
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId);
+  const { pinned: pinnedPipelines, others: otherPipelines } = splitPinnedPipelines(
+    pipelines,
+    pins.pinnedIds,
+  );
+  const selectedIsPinned = !!selectedPipeline && pins.isPinned(selectedPipeline.id);
+
+  const renderPipelineItem = (p: Pipeline) => {
+    const pinned = pins.isPinned(p.id);
+    return (
+      <DropdownMenuItem
+        key={p.id}
+        onClick={() => selectPipeline(p.id)}
+        className={cn(
+          "flex items-center justify-between gap-2",
+          p.id === selectedPipelineId ? "text-primary" : "text-popover-foreground",
+        )}
+      >
+        <span className="flex min-w-0 items-center">
+          <GitBranch className="mr-2 h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{p.name}</span>
+        </span>
+        {pins.available && (
+          <button
+            type="button"
+            onClick={(e) => {
+              // Pin without selecting the pipeline or closing the menu.
+              e.preventDefault();
+              e.stopPropagation();
+              void pins.togglePin(p.id);
+            }}
+            title={pinned ? "Unpin" : "Pin to top"}
+            aria-label={pinned ? `Unpin ${p.name}` : `Pin ${p.name}`}
+            aria-pressed={pinned}
+            className={cn(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              pinned ? "text-primary" : "text-muted-foreground/60 hover:text-foreground",
+            )}
+          >
+            <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} />
+          </button>
+        )}
+      </DropdownMenuItem>
+    );
+  };
 
   if (loading) {
     return (
@@ -367,7 +443,7 @@ function PipelinesPageInner() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
           {/* Pipeline selector dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -388,20 +464,23 @@ function PipelinesPageInner() {
                   No pipelines yet
                 </DropdownMenuItem>
               )}
-              {pipelines.map((p) => (
-                <DropdownMenuItem
-                  key={p.id}
-                  onClick={() => setSelectedPipelineId(p.id)}
-                  className={
-                    p.id === selectedPipelineId
-                      ? "text-primary"
-                      : "text-popover-foreground"
-                  }
-                >
-                  <GitBranch className="mr-2 h-3.5 w-3.5" />
-                  {p.name}
-                </DropdownMenuItem>
-              ))}
+              {pinnedPipelines.length > 0 && (
+                <>
+                  <div className="px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Pinned
+                  </div>
+                  {pinnedPipelines.map(renderPipelineItem)}
+                  {otherPipelines.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator className="bg-border" />
+                      <div className="px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        All pipelines
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+              {otherPipelines.map(renderPipelineItem)}
               <DropdownMenuSeparator className="bg-border" />
               {selectedPipeline && (
                 <DropdownMenuItem
@@ -414,6 +493,62 @@ function PipelinesPageInner() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Pin / unpin the pipeline being viewed */}
+          {pins.available && selectedPipeline && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void pins.togglePin(selectedPipeline.id)}
+              aria-pressed={selectedIsPinned}
+              title={selectedIsPinned ? "Unpin this pipeline" : "Pin this pipeline for quick access"}
+              className={cn(
+                "border-border bg-card",
+                selectedIsPinned
+                  ? "text-primary hover:bg-muted"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {selectedIsPinned ? (
+                <PinOff className="h-4 w-4" />
+              ) : (
+                <Pin className="h-4 w-4" />
+              )}
+              <span className="hidden sm:inline">
+                {selectedIsPinned ? "Unpin" : "Pin"}
+              </span>
+            </Button>
+          )}
+
+          {/* Quick switch between pinned pipelines */}
+          {pinnedPipelines.length > 0 && (
+            <nav
+              aria-label="Pinned pipelines"
+              className="flex min-w-0 max-w-full items-center gap-1.5 overflow-x-auto"
+            >
+              {pinnedPipelines.map((p) => {
+                const active = p.id === selectedPipelineId;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => selectPipeline(p.id)}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "inline-flex max-w-[12rem] shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      active
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Pin className="h-3 w-3 shrink-0 fill-current" />
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
